@@ -1,5 +1,3 @@
-> **REPOSITORY UPLOAD IN PROGRESS:** Documentation and some source files are available, but the complete source, packaged XPI, CI workflow, and update feed have not yet been uploaded. **Do not install from this repository until the upload is complete.** The previously tested package is available separately from the project maintainer.
-
 # Zotero → ChatGPT Chat (unofficial)
 
 [中文说明](README.zh-CN.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md)

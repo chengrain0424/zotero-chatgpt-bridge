@@ -1,0 +1,19 @@
+{
+  "addons": {
+    "zotero-chatgpt-safari@local.bridge": {
+      "updates": [
+        {
+          "version": "0.3.0",
+          "update_link": "https://raw.githubusercontent.com/chengrain0424/zotero-chatgpt-bridge/main/dist/Zotero_to_ChatGPT_Direct_v0.3.0_Zotero10.xpi",
+          "update_hash": "sha256:a872a625b0bbcd31740a7762a8db3c25ea16d93d5d5100ea46a73d6f584efcba",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "10.0",
+              "strict_max_version": "10.0.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
