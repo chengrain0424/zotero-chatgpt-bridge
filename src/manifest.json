@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "Zotero to ChatGPT Chat (Safari, Reader Toolbar)",
+  "version": "0.3.0",
+  "description": "Reader toolbar one-click send of current PDF and SI to a Safari ChatGPT Chat; editable prompt; hidden Terminal automation, no plugin dialogs.",
+  "author": "ChatGPT-assisted community build",
+  "applications": {
+    "zotero": {
+      "id": "zotero-chatgpt-safari@local.bridge",
+      "strict_min_version": "10.0",
+      "strict_max_version": "10.0.*",
+      "update_url": "https://raw.githubusercontent.com/chengrain0424/zotero-chatgpt-bridge/main/updates.json"
+    }
+  }
+}
