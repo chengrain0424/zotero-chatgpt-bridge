@@ -25,7 +25,7 @@
 
 ## 安装
 
-1. 从仓库 [`dist/`](dist/) 目录下载 `.xpi` 原始文件，或在发布后从 [Releases](../../releases) 下载。
+1. 从仓库下载当前 **v0.3.9** 的 [XPI 安装包](dist/Zotero_to_ChatGPT_Direct_v0.3.9_Zotero10.xpi)（点击 **Download raw file**）。原 [v0.3.0-beta Release](../../releases/tag/v0.3.0-beta) 是历史版本，包含旧安装包。
 2. Zotero 10 → **工具 → 插件 → 齿轮 → 从文件安装**，安装后重启 Zotero、重新打开 PDF。
 3. Safari → 设置 → 高级，启用开发者功能，再在 **开发者菜单**允许 `JavaScript from Apple Events`。
 4. 按需授权 macOS「自动化 / 辅助功能」权限。插件当前通过隐藏 Terminal 执行 AppleScript，但**无法保证完全无窗口闪现或系统权限弹窗**。
@@ -44,13 +44,3 @@
 ## 版本路线
 
 建议先公开 **macOS + Safari Beta**，随后抽象浏览器适配层：macOS Chrome、Edge、自定义路径；最后开发 Windows 专用的文件对话框自动化。不要把未测试的平台标成已支持。
-
-
-### v0.3.7 本地诊断测试版
-
-增加了 Zotero 桥接代码与 Safari AppleScript 独立版本标记，参见 [诊断指南](UPGRADE_v0.3.7.md)。尚未发布到 GitHub。
-
-
-### v0.3.8 quick-confirm test
-
-See [v0.3.8 test guide](UPGRADE_v0.3.8.md). This is a local testing build, not a stable release.
