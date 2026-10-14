@@ -1,10 +1,11 @@
 /* Zotero 10 / macOS - Reader toolbar -> Safari ChatGPT Chat.
- * Uses ORIGINAL Zotero PDF/SI via temporary symlinks, no PDF copies.
+ * Uses ORIGINAL Zotero attachments via hardlinks or original paths for upload; diagnostic symlinks only.
  * No auto-send; normal Chat page only; no public OpenAI API.
  */
 var ZCGBridge = {
   addonID: "zotero-chatgpt-safari@local.bridge",
   promptPref: "extensions.zoteroChatGPTBridge.promptTemplate",
+  attachmentModePref: "extensions.zoteroChatGPTBridge.attachmentMode",
   scriptSource: null,
   busy: false,
   toolbarHandler: null,
@@ -39,6 +40,16 @@ DOI：{{doi}}
     if (s.length > 20000) throw new Error("Prompt 超过 20000 字符");
     Services.prefs.setStringPref(this.promptPref, s);
   },
+  getAttachmentMode() {
+    // v0.3.0 users have no preference; default to all supported siblings.
+    try {
+      return Services.prefs.getStringPref(this.attachmentModePref, "all") === "si" ? "si" : "all";
+    } catch (_) { return "all"; }
+  },
+  setAttachmentMode(mode) {
+    if (mode !== "all" && mode !== "si") throw new Error("无效的附件筛选模式");
+    Services.prefs.setStringPref(this.attachmentModePref, mode);
+  },
   renderPrompt(data,files) {
     const vals={
       title:data.title,
@@ -70,7 +81,7 @@ DOI：{{doi}}
     root.style.cssText="display:inline-flex;align-items:center;gap:4px;margin:0 6px;flex-shrink:0;";
     const analyze=doc.createElement("button");
     analyze.type="button";
-    analyze.title="将当前论文 PDF 和 SI 添加到 ChatGPT 普通 Chat";
+    analyze.title="将当前论文及同一条目下符合筛选条件的附件添加到 ChatGPT 普通 Chat";
     analyze.setAttribute("aria-label","用 ChatGPT 分析当前论文");
     analyze.textContent="✦ ChatGPT";
     analyze.style.cssText="border:1px solid var(--color-border,#9ca3af);background:var(--material-toolbar,#f5f5f5);color:inherit;border-radius:5px;padding:4px 9px;cursor:pointer;font-size:12px;white-space:nowrap;";
@@ -111,6 +122,17 @@ DOI：{{doi}}
     const heading=doc.createElement("strong");heading.textContent="ChatGPT 文献分析 Prompt";panel.appendChild(heading);
     const note=doc.createElement("div");note.style.cssText="font-size:11px;opacity:.8;";
     note.textContent="可使用 {{title}}、{{doi}}、{{date}}、{{files}}、{{missing}}；保存后所有论文使用该模板。";panel.appendChild(note);
+    const optionRow=doc.createElement("label");
+    optionRow.style.cssText="display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.5;cursor:pointer;";
+    const includeAll=doc.createElement("input");
+    includeAll.type="checkbox";
+    includeAll.checked=this.getAttachmentMode() === "all";
+    includeAll.style.cssText="margin-top:3px;flex:none;";
+    optionRow.appendChild(includeAll);
+    const optionLabel=doc.createElement("span");
+    optionLabel.textContent="包含当前文献条目下全部受支持的本地附件（PDF / DOCX / XLSX 等，不要求文件名含 SI）。取消勾选则仅附加正文 PDF 和名称可识别的 SI。";
+    optionRow.appendChild(optionLabel);
+    panel.appendChild(optionRow);
     const area=doc.createElement("textarea");
     area.value=this.getTemplate();area.spellcheck=false;area.maxLength=20000;
     area.style.cssText="width:100%;height:300px;box-sizing:border-box;resize:vertical;border:1px solid #888;border-radius:5px;padding:10px;background:var(--material-background,#fff);color:inherit;line-height:1.5;font-size:12px;";
@@ -119,7 +141,7 @@ DOI：{{doi}}
     const make=(label,callback)=>{const btn=doc.createElement("button");btn.type="button";btn.textContent=label;btn.style.cssText="cursor:pointer;padding:5px 10px;border-radius:5px;border:1px solid #aaa;background:transparent;color:inherit;";btn.addEventListener("click",callback);controls.appendChild(btn);};
     make("恢复默认",()=>{area.value=this.defaultTemplate;area.focus();});
     make("取消",()=>panel.remove());
-    make("保存",()=>{try{this.setTemplate(area.value);panel.remove();}catch(e){note.textContent=e.message;}});
+    make("保存",()=>{try{this.setTemplate(area.value);this.setAttachmentMode(includeAll.checked ? "all" : "si");panel.remove();}catch(e){note.textContent=e.message;}});
     panel.appendChild(controls);
     doc.body.appendChild(panel);
     area.focus();
@@ -155,6 +177,7 @@ DOI：{{doi}}
     const date = parent?.isRegularItem?.() ? String(parent.getField("date") || "") : "";
     const siRE = /supplement(?:ary|al)?|supporting[\s_-]*information|\bSI\b|\bESI\b|appendi(?:x|ces)|supporting[\s_-]*file|[\s_-]suppl[\s_.-]/i;
     const formats = new Set(["pdf", "doc", "docx", "xls", "xlsx", "csv", "txt", "ppt", "pptx", "md"]);
+    const includeAll = this.getAttachmentMode() === "all";
     let available = [], missing = [], ignored = [];
     for (const a of all) {
       if (!a.isAttachment?.()) continue;
@@ -163,8 +186,13 @@ DOI：{{doi}}
       let ext = (filename.match(/\.([a-z0-9]{1,8})$/i) || [])[1]?.toLowerCase() || "";
       if (!ext && a.attachmentContentType === "application/pdf") ext = "pdf";
       const si = siRE.test(filename + " " + label);
-      if (!formats.has(ext) || (ext !== "pdf" && !si)) {
-        if (si) ignored.push(filename || label || `ID ${a.id}`);
+      // Publishers often name SI "data_1.docx" without any SI keywords.
+      if (!formats.has(ext)) {
+        ignored.push((filename || label || `ID ${a.id}`) + "：不支持的附件格式");
+        continue;
+      }
+      if (!includeAll && ext !== "pdf" && !si) {
+        ignored.push((filename || label || `ID ${a.id}`) + "：仅 SI 模式已跳过");
         continue;
       }
       let sourcePath = null;
@@ -203,6 +231,21 @@ DOI：{{doi}}
     else proc.run(true, args, args.length);
     if (proc.exitValue !== 0) throw new Error(`建立临时附件链接失败（exit=${proc.exitValue}）：${target}`);
   },
+  createHardlinkIfPossible(source, target) {
+    // APFS/POSIX hard links reference the same file bytes; they do not copy data.
+    // On external filesystems or cross-volume locations, fall back to choosing
+    // the original attachment path in Safari instead of an Alias symlink.
+    try {
+      const exe = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+      exe.initWithPath("/bin/ln");
+      const proc = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
+      proc.init(exe);
+      const args = [source, target];
+      if (typeof proc.runw === "function") proc.runw(true, args, args.length);
+      else proc.run(true, args, args.length);
+      return proc.exitValue === 0;
+    } catch (e) { Zotero.debug(`ZoteroChatGPTBridge hardlink unavailable: ${e}`); return false; }
+  },
   async prepare(item) {
     const data = await this.attachmentsFor(item);
     const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0,14);
@@ -215,15 +258,40 @@ DOI：{{doi}}
     const safe = value => Array.from(String(value || "attachment")
       .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").replace(/^\.+/, "_").trim()).slice(0,54).join("") || "attachment";
     const files = [];
+    // Each picker gets one regular hardlink in a dedicated directory, if
+    // possible. On cross-volume paths use the original Zotero file directly.
+    // links_only remains symlinks solely for inspection/diagnostics.
+    const pickerRoot = PathUtils.join(runDir, "single_file_picker");
+    await IOUtils.makeDirectory(pickerRoot, {createAncestors:true});
+    const pickerPaths = [];
     for (let i=0;i<data.ordered.length;i++) {
       const f=data.ordered[i];
-      const role = i===0 ? "MAIN" : f.si ? "SI" : "OTHER_PDF";
+      const role = i===0 ? "MAIN" : f.si ? "SI" : f.ext === "pdf" ? "OTHER_PDF" : "OTHER_ATTACHMENT";
       let base = f.filename || f.label || `attachment.${f.ext}`;
       if (base.toLowerCase().endsWith(`.${f.ext}`)) base = base.slice(0,-f.ext.length-1);
       const name = `${String(i+1).padStart(2,"0")}_${role}_${safe(base)}.${f.ext}`;
       const linkPath = PathUtils.join(linkDir, name);
       this.createSymlink(f.sourcePath, linkPath);
       if (!(await IOUtils.exists(linkPath))) throw new Error(`链接未能指向有效文件：${name}`);
+      const singleDir = PathUtils.join(pickerRoot, String(i+1).padStart(2, "0"));
+      await IOUtils.makeDirectory(singleDir, {createAncestors:true});
+      const pickerPath = PathUtils.join(singleDir, name);
+      // Avoid macOS NSOpenPanel treating symbolic links as Finder "Alias" items.
+      // Hardlink is a second directory entry to the SAME bytes, not a copy.
+      // If impossible (cross-device, provider restrictions), select original.
+      const hardLinked = this.createHardlinkIfPossible(f.sourcePath, pickerPath);
+      if (hardLinked && !(await IOUtils.exists(pickerPath)))
+        throw new Error(`单文件硬链接无法读取：${name}`);
+      // Use the same single-item staging directory even if the original
+      // attachment is on another disk. v0.3.0 successfully used symlinks in
+      // its native keyboard chooser, and it prevents dangerous Cmd+A in a
+      // real Zotero directory containing unrelated files.
+      if (!hardLinked) this.createSymlink(f.sourcePath, pickerPath);
+      if (!(await IOUtils.exists(pickerPath)))
+        throw new Error(`暂存附件无法读取：${name}`);
+      if (/[\r\n]/.test(pickerPath))
+        throw new Error(`文件路径含换行符，无法安全交给上传清单：${name}`);
+      pickerPaths.push(pickerPath);
       files.push({role, displayName:name, originalPath:f.sourcePath, sourceName:f.filename, size:f.size});
     }
     const prompt = this.renderPrompt(data, files);
@@ -233,21 +301,34 @@ DOI：{{doi}}
     await IOUtils.writeUTF8(manifestPath, JSON.stringify({title:data.title, itemID:data.record.id, files,
       missing:data.missing, ignored:data.ignored, linkDir, generatedAt:new Date().toISOString(),
       note:"SYMBOLIC LINKS ONLY: no copies of original PDFs. Do not delete original Zotero attachments."},null,2));
+    // Explicit, ordered file paths: avoid native file-picker multi-select/keyboard-focus problems.
+    // Upload candidate paths are hardlinks or original files, not diagnostic symlinks.
+    const uploadListPath = PathUtils.join(runDir, "upload_paths.txt");
+    const uploadPaths = pickerPaths;
+    await IOUtils.writeUTF8(uploadListPath, uploadPaths.join("\n") + "\n");
     const scriptPath = PathUtils.join(runDir,"Safari_自动上传.applescript");
     await IOUtils.writeUTF8(scriptPath, this.scriptSource);
     const statusPath = PathUtils.join(runDir,"status.log");
+    // Diagnostic markers identify the *actual loaded code*, independent of
+    // whatever version the Zotero addon-manager UI currently displays.
+    const codeMarker = "SCRIPT_BUILD v0.3.9 v030-keyboard-20261014";
+    const embeddedOK = typeof this.scriptSource === "string" && this.scriptSource.includes(codeMarker);
+    await IOUtils.writeUTF8(statusPath,
+      "BRIDGE_BUILD v0.3.9 v030-keyboard-20261014\n" +
+      "EMBEDDED_SCRIPT_MARKER " + (embeddedOK ? "YES" : "NO") + "\n");
+    if (!embeddedOK) throw new Error("ChatGPT Bridge 0.3.8: 打包的 Safari 脚本版本不一致，已停止以避免误用旧脚本。");
     // The successful standalone v1.4 used Terminal's existing TCC permissions.
     // Running osascript directly as Zotero can have *different* Accessibility/
     // Apple Events permissions and silently cause picker detection to fail.
     // Delegate only the AppleScript UI layer to Terminal; Zotero still selects
-    // the current paper and creates a new symlink-only attachment directory.
+    // the current paper and prepares read-only upload paths without copies.
     const shellQuote = str => "'" + String(str).replace(/'/g, "'\\''") + "'";
     const launcherPath = PathUtils.join(runDir, "Upload_to_ChatGPT.command");
-    const args = [scriptPath, linkDir, promptPath, data.title, statusPath]
+    const args = [scriptPath, linkDir, promptPath, data.title, statusPath, uploadListPath]
       .map(shellQuote).join(" ");
     const command = [
       "#!/bin/bash",
-      "# Zotero ChatGPT Bridge: one task, original file symlinks, silent UI.",
+      "# Zotero ChatGPT Bridge: one task, singleton-stage paths, silent UI.",
       "set -o pipefail",
       "# Hide Terminal before using its previously authorized AppleScript environment.",
       "/usr/bin/osascript -e 'tell application \"System Events\" to set visible of process \"Terminal\" to false' >/dev/null 2>&1 || true",
@@ -259,7 +340,7 @@ DOI：{{doi}}
     ].join("\n");
     await IOUtils.writeUTF8(launcherPath, command);
     try { Zotero.Utilities.copyToClipboard(prompt); } catch (_) {}
-    return {...data, files, linkDir, promptPath, scriptPath, statusPath, launcherPath, runDir};
+    return {...data, files, linkDir, promptPath, scriptPath, statusPath, uploadListPath, launcherPath, runDir};
   },
   runProcess(exePath, argv, sync=true) {
     const executable=Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);

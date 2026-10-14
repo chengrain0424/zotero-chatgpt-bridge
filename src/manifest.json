@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero to ChatGPT Chat (Safari, Reader Toolbar)",
-  "version": "0.3.0",
-  "description": "Reader toolbar one-click send of current PDF and SI to a Safari ChatGPT Chat; editable prompt; hidden Terminal automation, no plugin dialogs.",
+  "version": "0.3.9",
+  "description": "Zotero 10 macOS Safari: restore fast v0.3.0 keyboard picker per attachment; PDF+SI; editable prompt; no auto-send.",
   "author": "ChatGPT-assisted community build",
   "applications": {
     "zotero": {

@@ -10,7 +10,7 @@ import re
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.3.0"
+VERSION = "0.3.9"
 ASSET_NAME = f"Zotero_to_ChatGPT_Direct_v{VERSION}_Zotero10.xpi"
 FILES = ["manifest.json", "bootstrap.js", "bridge.js", "safari_source.js"]
 
@@ -37,7 +37,10 @@ def build(owner, repo):
     xpi = dist / ASSET_NAME
     with zipfile.ZipFile(xpi, "w", compression=zipfile.ZIP_DEFLATED) as z:
         for filename in FILES:
-            z.writestr(filename, generated[filename])
+            info = zipfile.ZipInfo(filename, (2020, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = (0o644 & 0xffff) << 16
+            z.writestr(info, generated[filename])
     sha = hashlib.sha256(xpi.read_bytes()).hexdigest()
     feed = {
         "addons": {
