@@ -27,7 +27,7 @@ The plugin uses your **existing signed-in ChatGPT browser session**, **not** the
 
 ## Install
 
-1. Download the `.xpi` from the local [`dist/`](dist/) folder for this test build (select the file and use **Download raw file**), or from [Releases](../../releases) once a release is published.
+1. Download the current **v0.3.9** [XPI installer](dist/Zotero_to_ChatGPT_Direct_v0.3.9_Zotero10.xpi) (click **Download raw file**). The existing [v0.3.0-beta release](../../releases/tag/v0.3.0-beta) is historical and contains an older installer.
 2. In Zotero 10: **Tools → Plugins → gear icon → Install Plugin From File**.
 3. Restart Zotero and reopen a PDF. Use `✦ ChatGPT` and `⚙` in the reader toolbar.
 4. In Safari: enable developer features and **Develop → Allow JavaScript from Apple Events**. Grant only necessary macOS Accessibility/Automation permissions when asked.
@@ -54,13 +54,3 @@ If no action occurs, inspect Zotero **Tools → Developer → Error Console** an
 ## Source and licensing
 
 This repository package contains no user PDFs, accounts, tokens or personal logs. Source code is released under the [MIT License](LICENSE).
-
-
-### Local v0.3.7 diagnostic build
-
-This local test build identifies the actual loaded bridge and Safari script separately in `status.log`; see [diagnostic guide](UPGRADE_v0.3.7.md). It is **not** a published GitHub release.
-
-
-### v0.3.8 quick-confirm test
-
-See [v0.3.8 test guide](UPGRADE_v0.3.8.md). This is a local testing build, not a stable release.
