@@ -25,10 +25,10 @@ jobs:
           python3 -m json.tool dist/updates.json > /dev/null
 
       - name: Build experimental Windows installer
-        if: github.ref == 'refs/heads/feature/windows-edge-chrome'
+        if: github.ref == 'refs/heads/feature/windows-edge-chrome' || github.head_ref == 'feature/windows-edge-chrome'
         run: python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
       - name: Upload Windows XPI installer
-        if: github.ref == 'refs/heads/feature/windows-edge-chrome'
+        if: github.ref == 'refs/heads/feature/windows-edge-chrome' || github.head_ref == 'feature/windows-edge-chrome'
         uses: actions/upload-artifact@v4
         with:
           name: Zotero-Windows-Experimental-XPI
