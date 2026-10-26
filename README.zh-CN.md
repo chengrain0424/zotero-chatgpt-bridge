@@ -76,3 +76,7 @@ beta.6 的真实运行日志表明，附件加号已由物理鼠标点击成功�
 ### Windows beta.8：找到“Add files and more”却不能点击
 
 在 beta.7 日志中，诊断器能枚举到 `Add files and more`，但用于点击的 `Find-UIA` 没有返回按钮。二者检查条件不同：后者会过滤掉暂时禁用和不可见的控件，而诊断器没有过滤禁用状态。beta.8 改为**先选择并上传附件，最后粘贴 Prompt**，避免长文本使输入区域重新渲染；对暂不可用的附件按钮短暂重试并记录 `UPLOAD_PLUS_STATE enabled=...` 和 `offscreen=...`。失败时若 ChatGPT 网页仍在前台，仍会尝试安全地粘贴 Prompt；否则放在剪贴板供手动 Ctrl+V。依然不会自动发送，上传须人工核对。
+
+### Windows beta.9：Windows 文件名输入框不支持 ValuePattern
+
+beta.8 的实机日志已经确认打开了受 ChatGPT Edge 窗口拥有的原生文件选择器，但其文件名输入框拒绝 `ValuePattern`。beta.9 在校验文件选择器与“文件名”输入框焦点后，用键盘 `Ctrl+A`、`Ctrl+V` 填入 Zotero 原始附件的**完整绝对路径**，再在同一控件内用 `Ctrl+A`、`Ctrl+C` 读回并与原路径逐字核对。只有读回一致才点击“打开”；如果无法确认焦点或内容，立即停止并保留 Prompt 的剪贴板后备。仍然不会自动发送，点击发送前务必核对 ChatGPT 是否确实附加了目标论文。
