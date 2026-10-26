@@ -63,3 +63,5 @@ jobs:
           Write-Host $output
           if ($output -notmatch 'POWERSHELL_ENTERED' -or $output -notmatch 'WIN_SCRIPT_BUILD') { throw 'PowerShell helper did not complete initialization' }
           if ($output -match 'INITIALIZATION_ERROR' -or $output -match 'START_BROWSER') { throw 'Unexpected PowerShell startup behavior' }
+          # Empty fixture deliberately makes helper exit 1 before opening a browser.
+          $global:LASTEXITCODE = 0
