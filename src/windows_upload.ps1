@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta5 uia-20261026
+# WIN_SCRIPT_BUILD v0.4.0beta6 uia-20261026
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -27,6 +27,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 public static class ZcgWin32 {
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint command);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
@@ -173,8 +174,12 @@ function Invoke-UIA([System.Windows.Automation.AutomationElement]$Element) {
         Log ('UIA_KEYBOARD_UNAVAILABLE ' + $_.Exception.GetType().Name)
     }
 
-    # Last resort: click the UIA-provided point only if it still resolves
-    # back to the expected element/child. Never click unverified coordinates.
+    return (Click-UIA-Verified $Element)
+}
+
+
+function Click-UIA-Verified([System.Windows.Automation.AutomationElement]$Element) {
+    # Guard the target with a UI Automation hit test immediately before click.
     try {
         $r = $Element.Current.BoundingRectangle
         if ($r.Width -lt 8 -or $r.Height -lt 8) { return $false }
@@ -244,33 +249,82 @@ function Log-UploadCandidates([System.Windows.Automation.AutomationElement]$Wind
     }
 }
 
-function Get-FileDialog {
-    # Only trust the actual foreground native chooser from the requested browser.
-    $fg = Get-ForegroundBrowser
-    if ($null -eq $fg) { return $null }
-    $name = [string]$fg.Element.Current.Name
+function Get-WindowInfo([IntPtr]$Handle) {
+    if ($Handle -eq [IntPtr]::Zero) { return $null }
     $classBuffer = New-Object System.Text.StringBuilder 256
-    [void][ZcgWin32]::GetClassName($fg.Handle, $classBuffer, $classBuffer.Capacity)
-    $class = $classBuffer.ToString()
-    if ($class -ne '#32770' -and $name -notmatch '^(Open|打开|选择文件|Choose File|Select File)') {
-        return $null
+    [void][ZcgWin32]::GetClassName($Handle,$classBuffer,$classBuffer.Capacity)
+    [uint32]$processId = 0
+    [void][ZcgWin32]::GetWindowThreadProcessId($Handle,[ref]$processId)
+    $procName = 'unknown'
+    try { $procName = (Get-Process -Id ([int]$processId) -ErrorAction Stop).ProcessName } catch {}
+    return [pscustomobject]@{
+        Handle=$Handle; Class=$classBuffer.ToString(); ProcessName=$procName
+        Owner=[ZcgWin32]::GetWindow($Handle,4)
     }
-    return $fg.Element
+}
+
+function Test-OwnedByChat([IntPtr]$Handle) {
+    # Only interact with modal pickers owned by the ChatGPT Edge window that
+    # this helper opened. Never type paths into unrelated system dialogs.
+    if ($script:ChatWindowHandle -eq [IntPtr]::Zero) { return $false }
+    $owner = [ZcgWin32]::GetWindow($Handle,4)
+    for ($depth=0; $depth -lt 8 -and $owner -ne [IntPtr]::Zero; $depth++) {
+        if ($owner -eq $script:ChatWindowHandle) { return $true }
+        $next = [ZcgWin32]::GetWindow($owner,4)
+        if ($next -eq $owner) { break }
+        $owner=$next
+    }
+    return $false
+}
+
+function Log-ForegroundState([string]$Stage) {
+    try {
+        $info = Get-WindowInfo ([ZcgWin32]::GetForegroundWindow())
+        if ($null -eq $info) { Log ('WINDOW_STATE ' + $Stage + ' none'); return }
+        $owned = Test-OwnedByChat $info.Handle
+        $same = $info.Handle -eq $script:ChatWindowHandle
+        # Do not log window titles, document names, or file paths.
+        Log ('WINDOW_STATE ' + $Stage + ' class=' + $info.Class +
+            ' process=' + $info.ProcessName + ' ownedByChat=' + $owned +
+            ' sameChatWindow=' + $same)
+    } catch { Log ('WINDOW_STATE_ERROR ' + $_.Exception.GetType().Name) }
+}
+
+function Get-FileDialog {
+    # The native picker is not guaranteed to have Edge as its foreground
+    # process; verify window ownership instead of requiring Get-ForegroundBrowser.
+    $handle = [ZcgWin32]::GetForegroundWindow()
+    $info = Get-WindowInfo $handle
+    if ($null -eq $info -or -not (Test-OwnedByChat $handle)) { return $null }
+    if ($info.Class -ne '#32770') { return $null }
+    try {
+        $element=[System.Windows.Automation.AutomationElement]::FromHandle($handle)
+        if ($null -eq $element) { return $null }
+        # Require the actual native file name field to exist before selecting.
+        $filename = Find-FilenameControl $element
+        if ($null -eq $filename) { return $null }
+        return $element
+    } catch { return $null }
 }
 
 function Wait-FileDialog([int]$Seconds) {
     $deadline = (Get-Date).AddSeconds($Seconds)
+    $elapsed=0
     do {
-        $dialog = Get-FileDialog
-        if ($null -ne $dialog) { return $dialog }
+        $dialog=Get-FileDialog
+        if ($null -ne $dialog) {
+            Log 'PICKER_CONFIRMED ownership-and-filename-field'
+            return $dialog
+        }
         Start-Sleep -Milliseconds 250
+        $elapsed++
+        if ($elapsed % 12 -eq 0) { Log-ForegroundState 'waiting-for-picker' }
     } while ((Get-Date) -lt $deadline)
+    Log-ForegroundState 'picker-timeout'
     return $null
 }
 
 function Open-FileDialog([System.Windows.Automation.AutomationElement]$ChatWindow) {
-    # ChatGPT typically has a composer "+" button opening an upload menu.
-    # Avoid clicking the same toggle twice (previous uploader reopened/closed it).
     $buttons = @([System.Windows.Automation.ControlType]::Button,
                  [System.Windows.Automation.ControlType]::MenuItem)
     $plusLabels = '(?i)(composer-plus-btn|Add files and more|Add photos and files|Add photos & files|Attach files|添加文件|添加照片|添加附件|附件|Add photos|Upload files)'
@@ -288,11 +342,10 @@ function Open-FileDialog([System.Windows.Automation.AutomationElement]$ChatWindo
         return $null
     }
     Log 'UPLOAD_PLUS_CLICKED'
-    $dialog = Wait-FileDialog 3
+    $dialog = Wait-FileDialog 2
     if ($null -ne $dialog) { Log 'PICKER_OPEN_DIRECT'; return $dialog }
 
-    # The first click usually opens a menu. Retry querying the *new* tree.
-    $menu = Find-UIA $ChatWindow $buttons $uploadLabels
+    $menu=Find-UIA $ChatWindow $buttons $uploadLabels
     if ($null -eq $menu) {
         Log 'UPLOAD_MENU_NOT_FOUND'
         Log-UploadCandidates $ChatWindow
@@ -304,9 +357,28 @@ function Open-FileDialog([System.Windows.Automation.AutomationElement]$ChatWindo
         return $null
     }
     Log 'UPLOAD_MENU_CLICKED'
-    $dialog = Wait-FileDialog 7
-    if ($null -eq $dialog) { Log 'PICKER_NOT_DETECTED_AFTER_UPLOAD_MENU' }
-    return $dialog
+    $dialog=Wait-FileDialog 5
+    if ($null -ne $dialog) { return $dialog }
+
+    # InvokePattern may succeed without opening a real Windows file picker.
+    # Only retry through a verified hit-tested click while still on ChatGPT.
+    $foreground=Get-ForegroundBrowser
+    if ($null -ne $foreground -and $foreground.Handle -eq $script:ChatWindowHandle) {
+        $retry=Find-UIA $ChatWindow $buttons $uploadLabels
+        if ($null -ne $retry -and (Click-UIA-Verified $retry)) {
+            Log 'UPLOAD_MENU_VERIFIED_MOUSE_RETRY'
+            $dialog=Wait-FileDialog 6
+            if ($null -ne $dialog) { return $dialog }
+        } else {
+            Log 'UPLOAD_MENU_RETRY_TARGET_NOT_VERIFIED'
+        }
+    } else {
+        Log 'UPLOAD_MENU_RETRY_SKIPPED foreground-not-chat'
+    }
+    Log 'PICKER_NOT_DETECTED_AFTER_UPLOAD_MENU'
+    Log-ForegroundState 'picker-final'
+    Log-UploadCandidates $ChatWindow
+    return $null
 }
 
 function Find-FilenameControl([System.Windows.Automation.AutomationElement]$Dialog) {
@@ -437,6 +509,7 @@ try {
     if ($null -eq $browserWindow) {
         throw '没有检测到位于前台的 ChatGPT 浏览器窗口。请先登录 ChatGPT，再手动附加文件。'
     }
+    $script:ChatWindowHandle = $browserWindow.Handle
     Log 'CHAT_WINDOW_VERIFIED title contains ChatGPT'
     Log-UploadCandidates $browserWindow.Element
     # Prompt is independent of uploads; a failed picker must never suppress it.
