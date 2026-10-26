@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta7 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta8 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -324,14 +324,49 @@ function Wait-FileDialog([int]$Seconds) {
     return $null
 }
 
+function Log-PlusButtonState([System.Windows.Automation.AutomationElement]$Window) {
+    # This is diagnostic only. Read state even if disabled/offscreen, since
+    # Find-UIA deliberately excludes those controls from interaction.
+    try {
+        $filter = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::Button)
+        $buttons = $Window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $filter)
+        $found = 0
+        foreach ($button in $buttons) {
+            try {
+                $name = [string]$button.Current.Name
+                if ($name -notmatch '(?i)^(Add files and more|Attach files|添加文件|添加附件|添加照片|Add photos and files|Add photos & files)$') { continue }
+                $found++
+                $enabled=$button.Current.IsEnabled
+                $offscreen=$button.Current.IsOffscreen
+                $r=$button.Current.BoundingRectangle
+                Log ('UPLOAD_PLUS_STATE enabled=' + $enabled + ' offscreen=' +
+                    $offscreen + ' width=' + [Math]::Round($r.Width) +
+                    ' height=' + [Math]::Round($r.Height))
+            } catch { Log ('UPLOAD_PLUS_STATE_READ_ERROR ' + $_.Exception.GetType().Name) }
+        }
+        if ($found -eq 0) { Log 'UPLOAD_PLUS_STATE no-matching-button' }
+    } catch { Log ('UPLOAD_PLUS_STATE_ERROR ' + $_.Exception.GetType().Name) }
+}
+
 function Open-FileDialog([System.Windows.Automation.AutomationElement]$ChatWindow) {
     $buttons = @([System.Windows.Automation.ControlType]::Button,
                  [System.Windows.Automation.ControlType]::MenuItem)
     $plusLabels = '(?i)(composer-plus-btn|Add files and more|Add photos and files|Add photos & files|Attach files|添加文件|添加照片|添加附件|附件|Add photos|Upload files)'
     $uploadLabels = '(?i)(Upload files|Upload from computer|Add photos.{0,8}files|从电脑上传|上传文件|添加照片和文件)'
-    $plus = Find-UIA $ChatWindow $buttons $plusLabels
+    # A freshly loaded composer may briefly disable its attach button.
+    # Never click disabled elements: wait for an interactive one, with diagnostics.
+    $plus = $null
+    for ($attempt=0; $attempt -lt 12; $attempt++) {
+        $plus = Find-UIA $ChatWindow $buttons $plusLabels
+        if ($null -ne $plus) { break }
+        if ($attempt -eq 0 -or $attempt -eq 5) { Log-PlusButtonState $ChatWindow }
+        Start-Sleep -Milliseconds 500
+    }
     if ($null -eq $plus) {
-        Log 'UPLOAD_PLUS_NOT_FOUND'
+        Log 'UPLOAD_PLUS_UNAVAILABLE_AFTER_RETRIES'
+        Log-PlusButtonState $ChatWindow
         Log-UploadCandidates $ChatWindow
         return $null
     }
@@ -481,7 +516,7 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta7 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta8 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
@@ -506,8 +541,9 @@ try {
     $script:ChatWindowHandle = $browserWindow.Handle
     Log 'CHAT_WINDOW_VERIFIED title contains ChatGPT'
     Log-UploadCandidates $browserWindow.Element
-    # Prompt is independent of uploads; a failed picker must never suppress it.
-    Place-Prompt $browserWindow.Element $prompt
+    # Upload first: pasting a long Prompt may disable/re-render the attach button.
+    # Keep Prompt on clipboard now, and paste when picker operations finish.
+    Log 'UPLOAD_FIRST_PROMPT_CLIPBOARD_READY'
     for ($i=0; $i -lt $paths.Count; $i++) {
         if ($null -ne (Get-FileDialog)) { throw '上一个文件选择器仍处于打开状态。' }
         [void][ZcgWin32]::SetForegroundWindow($browserWindow.Handle)
@@ -522,6 +558,13 @@ try {
         Start-Sleep -Milliseconds 1100
     }
     Log ('ALL_PICKERS_CLOSED ' + $paths.Count)
+    [void][ZcgWin32]::SetForegroundWindow($browserWindow.Handle)
+    $foreground=Wait-ChatWindow 2
+    if ($null -ne $foreground -and $foreground.Handle -eq $script:ChatWindowHandle) {
+        Place-Prompt $foreground.Element $prompt
+    } else {
+        Log 'PROMPT_CLIPBOARD_READY chat not foreground after uploads; paste manually'
+    }
     Log 'NO_AUTO_SEND verify files and normal Chat mode before submitting'
 } catch {
     try {
@@ -531,5 +574,17 @@ try {
         }
     } catch {}
     Log ('ERROR ' + $_.Exception.Message)
+    # An attachment error must not suppress the prompt. Only attempt auto-paste
+    # if the foreground is still the verified ChatGPT browser, not a native dialog.
+    try {
+        $fg=Get-ForegroundBrowser
+        if ($null -ne $fg -and $fg.Handle -eq $script:ChatWindowHandle) {
+            Place-Prompt $fg.Element $prompt
+        } else {
+            Log 'PROMPT_CLIPBOARD_READY upload error; browser not foreground'
+        }
+    } catch {
+        Log ('PROMPT_FALLBACK_FAILED ' + $_.Exception.GetType().Name)
+    }
     exit 1
 }
