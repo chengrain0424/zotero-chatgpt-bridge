@@ -12,7 +12,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.4.0-beta.1"
 ASSET_NAME = f"Zotero_to_ChatGPT_Direct_v{VERSION}_Zotero10.xpi"
-FILES = ["manifest.json", "bootstrap.js", "bridge.js", "safari_source.js", "windows_source.js"]
+FILES = ["manifest.json", "bootstrap.js", "bridge.js", "safari_source.js", "windows_source.js", "prefs.xhtml", "icon.svg"]
 
 
 def build(owner, repo):
@@ -34,6 +34,8 @@ def build(owner, repo):
         "bridge.js": (source / "bridge.js").read_bytes(),
         "safari_source.js": js_source.encode("utf-8"),
         "windows_source.js": js_windows.encode("utf-8"),
+        "prefs.xhtml": (source / "prefs.xhtml").read_bytes(),
+        "icon.svg": (source / "icon.svg").read_bytes(),
     }
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
