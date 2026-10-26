@@ -481,7 +481,7 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta1 uia-20261026'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta7 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
