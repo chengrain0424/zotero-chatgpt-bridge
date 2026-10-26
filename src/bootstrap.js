@@ -14,6 +14,7 @@ async function startup({ rootURI }) {
   ZCGBridge = scope.ZCGBridge;
   Services.scriptloader.loadSubScript(rootURI + "windows_source.js", scope);
   ZCGBridge.init(scope.SAFARI_SOURCE, scope.WINDOWS_SOURCE);
+  Zotero.PreferencePanes.register({ pluginID: "zotero-chatgpt-safari@local.bridge", src: rootURI + "prefs.xhtml", label: "ChatGPT Bridge", image: rootURI + "icon.svg" });
   ZCGBridge.registerReaderToolbar();
   for (const win of Zotero.getMainWindows()) ZCGBridge.addUI(win);
 }
