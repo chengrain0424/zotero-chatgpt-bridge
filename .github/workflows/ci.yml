@@ -23,3 +23,15 @@ jobs:
           python3 scripts/build_release.py --owner dummy-owner --repo dummy-repo
           python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.1*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
           python3 -m json.tool dist/updates.json > /dev/null
+
+      - name: Build experimental Windows installer
+        if: github.ref == 'refs/heads/feature/windows-edge-chrome'
+        run: python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
+      - name: Upload Windows XPI installer
+        if: github.ref == 'refs/heads/feature/windows-edge-chrome'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zotero-Windows-Experimental-XPI
+          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.1_Zotero10.xpi
+          if-no-files-found: error
+          retention-days: 30
