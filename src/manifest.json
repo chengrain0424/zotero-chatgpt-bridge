@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero to ChatGPT Chat (macOS Safari / Windows Chromium)",
-  "version": "0.4.0-beta.4",
-  "description": "Zotero 10 macOS Safari / Windows Edge Chrome beta: experimental upload UIA diagnostics and independent prompt paste; no auto-send.",
+  "version": "0.4.0-beta.5",
+  "description": "Experimental Windows Edge/Chrome UI Automation: safe verified click fallback, upload diagnostics, prompt clipboard fallback; no auto-send.",
   "author": "ChatGPT-assisted community build",
   "applications": {
     "zotero": {
