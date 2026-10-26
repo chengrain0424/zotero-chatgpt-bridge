@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta4 uia-20261026
+# WIN_SCRIPT_BUILD v0.4.0beta5 uia-20261026
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -30,6 +30,11 @@ public static class ZcgWin32 {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT pt);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+
 }
 '@
 } catch {
@@ -122,19 +127,120 @@ function Find-UIA([System.Windows.Automation.AutomationElement]$Root,
     return $null
 }
 
+function Test-UIATarget([System.Windows.Automation.AutomationElement]$Expected, [System.Windows.Automation.AutomationElement]$AtPoint) {
+    # Prevent an accidental click on an overlay or another control after layout changes.
+    $node = $AtPoint
+    for ($depth=0; $depth -lt 8 -and $null -ne $node; $depth++) {
+        try {
+            if ($node.Equals($Expected)) { return $true }
+            $node = [System.Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($node)
+        } catch { return $false }
+    }
+    return $false
+}
+
 function Invoke-UIA([System.Windows.Automation.AutomationElement]$Element) {
     if ($null -eq $Element) { return $false }
     try {
+        if (-not $Element.Current.IsEnabled -or $Element.Current.IsOffscreen) { return $false }
         $p = $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
         $p.Invoke()
+        Log 'UIA_ACTIVATED via=InvokePattern'
         return $true
-    } catch {}
+    } catch {
+        Log ('UIA_INVOKE_UNAVAILABLE ' + $_.Exception.GetType().Name)
+    }
     try {
         $p = $Element.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
         $p.DoDefaultAction()
+        Log 'UIA_ACTIVATED via=LegacyAccessible'
         return $true
-    } catch {}
+    } catch {
+        Log ('UIA_LEGACY_UNAVAILABLE ' + $_.Exception.GetType().Name)
+    }
+
+    # Keyboard fallback: only send Space if keyboard focus can be verified.
+    try {
+        $Element.SetFocus()
+        Start-Sleep -Milliseconds 100
+        $focus = [System.Windows.Automation.AutomationElement]::FocusedElement
+        if ($null -ne $focus -and $focus.Equals($Element)) {
+            [System.Windows.Forms.SendKeys]::SendWait('{SPACE}')
+            Log 'UIA_ACTIVATED via=KeyboardSpace'
+            return $true
+        }
+    } catch {
+        Log ('UIA_KEYBOARD_UNAVAILABLE ' + $_.Exception.GetType().Name)
+    }
+
+    # Last resort: click the UIA-provided point only if it still resolves
+    # back to the expected element/child. Never click unverified coordinates.
+    try {
+        $r = $Element.Current.BoundingRectangle
+        if ($r.Width -lt 8 -or $r.Height -lt 8) { return $false }
+        $x = [int]($r.Left + $r.Width/2)
+        $y = [int]($r.Top + $r.Height/2)
+        $hit = [System.Windows.Automation.AutomationElement]::FromPoint(
+            [System.Windows.Point]::new($x,$y))
+        if (-not (Test-UIATarget $Element $hit)) {
+            Log 'UIA_MOUSE_TARGET_MISMATCH stopped'
+            return $false
+        }
+        $previous = New-Object ZcgWin32+POINT
+        $hasPrevious = [ZcgWin32]::GetCursorPos([ref]$previous)
+        try {
+            [void][ZcgWin32]::SetCursorPos($x,$y)
+            Start-Sleep -Milliseconds 80
+            $hitAgain = [System.Windows.Automation.AutomationElement]::FromPoint(
+                [System.Windows.Point]::new($x,$y))
+            if (-not (Test-UIATarget $Element $hitAgain)) {
+                Log 'UIA_MOUSE_TARGET_CHANGED stopped'
+                return $false
+            }
+            [ZcgWin32]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero)
+            [ZcgWin32]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)
+            Log 'UIA_ACTIVATED via=VerifiedMouseClick'
+            return $true
+        } finally {
+            if ($hasPrevious) { [void][ZcgWin32]::SetCursorPos($previous.X,$previous.Y) }
+        }
+    } catch {
+        Log ('UIA_MOUSE_UNAVAILABLE ' + $_.Exception.Message)
+    }
     return $false
+}
+
+function Log-UploadCandidates([System.Windows.Automation.AutomationElement]$Window) {
+    # Only record toolbar/button labels relevant to uploading. Do not dump chat
+    # content, document text, URLs, or clipboard/prompt contents.
+    try {
+        foreach ($type in @([System.Windows.Automation.ControlType]::Button,
+                            [System.Windows.Automation.ControlType]::MenuItem,
+                            [System.Windows.Automation.ControlType]::Edit)) {
+            $filter = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,$type)
+            $items = $Window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$filter)
+            Log ('UIA_COUNT type=' + $type.ProgrammaticName + ' count=' + $items.Count)
+            $logged=0
+            foreach ($item in $items) {
+                if ($logged -ge 15) { break }
+                try {
+                    if ($item.Current.IsOffscreen) { continue }
+                    $label=[string]$item.Current.Name
+                    $id=[string]$item.Current.AutomationId
+                    if (($label + ' ' + $id) -notmatch '(?i)(add|upload|file|attach|composer|photo|plus|message|prompt|ask|文件|上传|添加|附件|照片|消息|提问)') { continue }
+                    $label=($label -replace '[\r\n]',' ')
+                    $id=($id -replace '[\r\n]',' ')
+                    Log ('UIA_CANDIDATE type=' + $type.ProgrammaticName + ' label=' +
+                        $label.Substring(0,[Math]::Min(70,$label.Length)) + '; id=' +
+                        $id.Substring(0,[Math]::Min(60,$id.Length)))
+                    $logged++
+                } catch {}
+            }
+        }
+    } catch {
+        Log ('UIA_CANDIDATES_ERROR ' + $_.Exception.GetType().Name)
+    }
 }
 
 function Get-FileDialog {
@@ -329,6 +435,7 @@ try {
         throw '没有检测到位于前台的 ChatGPT 浏览器窗口。请先登录 ChatGPT，再手动附加文件。'
     }
     Log 'CHAT_WINDOW_VERIFIED title contains ChatGPT'
+    Log-UploadCandidates $browserWindow.Element
     # Prompt is independent of uploads; a failed picker must never suppress it.
     Place-Prompt $browserWindow.Element $prompt
     for ($i=0; $i -lt $paths.Count; $i++) {
