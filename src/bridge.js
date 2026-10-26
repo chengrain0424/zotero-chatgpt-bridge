@@ -376,13 +376,14 @@ DOI：{{doi}}
       throw new Error("Attachment path contains a newline");
     const promptPath=PathUtils.join(runDir,"prompt.txt");
     const uploadListPath=PathUtils.join(runDir,"upload_paths.txt");
-    const scriptPath=PathUtils.join(runDir,"Windows_自动上传.ps1");
+    const scriptPath=PathUtils.join(runDir,"windows_upload.ps1");
     const statusPath=PathUtils.join(runDir,"status.log");
     const prompt=this.renderPrompt(data,files);
     await IOUtils.writeUTF8(promptPath,prompt);
     await IOUtils.writeUTF8(uploadListPath,files.map(f=>f.originalPath).join("\n")+"\n");
-    await IOUtils.writeUTF8(scriptPath,this.windowsScriptSource);
-    await IOUtils.writeUTF8(statusPath,"BRIDGE_BUILD v0.4.0beta1 windows\n");
+    // Windows PowerShell 5.1 expects a BOM for a UTF-8 script with Chinese text.
+    await IOUtils.writeUTF8(scriptPath,"\uFEFF"+this.windowsScriptSource.replace(/^\uFEFF/,""));
+    await IOUtils.writeUTF8(statusPath,"BRIDGE_BUILD v0.4.0beta3 windows\nSCRIPT_SAVED_UTF8_BOM\n");
     await IOUtils.writeUTF8(PathUtils.join(runDir,"selection.json"),
       JSON.stringify({itemID:data.record.id,title:data.title,files,
         missing:data.missing,ignored:data.ignored,generatedAt:new Date().toISOString()},null,2));
@@ -410,7 +411,12 @@ DOI：{{doi}}
           "-PromptPath",draft.promptPath,"-UploadListPath",draft.uploadListPath,"-StatusPath",draft.statusPath];
         const powershell=PathUtils.join(Services.dirsvc.get("WinD",Ci.nsIFile).path,
           "System32","WindowsPowerShell","v1.0","powershell.exe");
-        this.runProcess(powershell,args,false);
+        const launchPath=PathUtils.join(draft.runDir,"launch_status.txt");
+        await IOUtils.writeUTF8(launchPath,"SPAWN_REQUESTED "+powershell+"\n");
+        let process;
+        try { process=this.runProcess(powershell,args,false); }
+        catch(err) { await IOUtils.writeUTF8(launchPath,"SPAWN_FAILED "+String(err)+"\n"); throw err; }
+        await IOUtils.writeUTF8(launchPath,"NSIPROCESS_RETURNED pid="+String(process.pid ?? "unknown")+"\n");
         Zotero.debug("ZoteroChatGPTBridge Windows helper launched: "+draft.runDir);
         return true;
       }
