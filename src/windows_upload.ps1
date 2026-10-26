@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta6 uia-20261026
+# WIN_SCRIPT_BUILD v0.4.0beta7 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -352,30 +352,24 @@ function Open-FileDialog([System.Windows.Automation.AutomationElement]$ChatWindo
         return $null
     }
     Log ('UPLOAD_MENU_FOUND name=' + [string]$menu.Current.Name)
-    if (-not (Invoke-UIA $menu)) {
-        Log 'UPLOAD_MENU_INVOKE_FAILED'
+    # An InvokePattern action on Chromium's HTML file-input menu entry can
+    # dismiss the menu without providing the browser a trusted user gesture.
+    # Use one hit-tested physical mouse click, rather than invoking the
+    # accessibility action and then retrying after the menu closes.
+    Log ('UPLOAD_MENU_TARGET type=' + $menu.Current.ControlType.ProgrammaticName +
+         ' enabled=' + $menu.Current.IsEnabled +
+         ' offscreen=' + $menu.Current.IsOffscreen)
+    if (-not (Click-UIA-Verified $menu)) {
+        Log 'UPLOAD_MENU_MOUSE_NOT_VERIFIED'
+        Log-UploadCandidates $ChatWindow
         return $null
     }
-    Log 'UPLOAD_MENU_CLICKED'
-    $dialog=Wait-FileDialog 5
+    Log 'UPLOAD_MENU_PHYSICAL_CLICK'
+    $dialog=Wait-FileDialog 8
     if ($null -ne $dialog) { return $dialog }
-
-    # InvokePattern may succeed without opening a real Windows file picker.
-    # Only retry through a verified hit-tested click while still on ChatGPT.
-    $foreground=Get-ForegroundBrowser
-    if ($null -ne $foreground -and $foreground.Handle -eq $script:ChatWindowHandle) {
-        $retry=Find-UIA $ChatWindow $buttons $uploadLabels
-        if ($null -ne $retry -and (Click-UIA-Verified $retry)) {
-            Log 'UPLOAD_MENU_VERIFIED_MOUSE_RETRY'
-            $dialog=Wait-FileDialog 6
-            if ($null -ne $dialog) { return $dialog }
-        } else {
-            Log 'UPLOAD_MENU_RETRY_TARGET_NOT_VERIFIED'
-        }
-    } else {
-        Log 'UPLOAD_MENU_RETRY_SKIPPED foreground-not-chat'
-    }
-    Log 'PICKER_NOT_DETECTED_AFTER_UPLOAD_MENU'
+    # Never toggle the + button a second time after a failed native picker:
+    # the menu may have closed, and a retry can accidentally reopen it.
+    Log 'PICKER_NOT_DETECTED_AFTER_PHYSICAL_MENU_CLICK'
     Log-ForegroundState 'picker-final'
     Log-UploadCandidates $ChatWindow
     return $null
