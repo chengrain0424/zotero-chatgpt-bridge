@@ -78,6 +78,10 @@ DOI：{{doi}}
     catch(e) { Zotero.logError(e); }
     this.toolbarHandler=null;
   },
+  reportError(err) {
+    try { Zotero.logError(err); } catch (_) {}
+    try { Services.prompt.alert(null,"ChatGPT Bridge", String(err?.message || err)); } catch (_) {}
+  },
   renderToolbar({reader,doc,append}) {
     if (!reader || !doc || typeof append !== "function") return;
     // Each toolbar render belongs to ONE reader. Never fall back to stale selection.
@@ -92,16 +96,16 @@ DOI：{{doi}}
     analyze.addEventListener("click",event=>{
       event.preventDefault();event.stopPropagation();
       const itemID = reader.itemID || reader._item?.id;
-      if (!itemID) { Zotero.logError(new Error("ChatGPT: 当前阅读器没有 itemID")); return; }
+      if (!itemID) { this.reportError(new Error("ChatGPT: 当前阅读器没有 itemID")); return; }
       const item=Zotero.Items.get(itemID);
-      if (!item) { Zotero.logError(new Error(`ChatGPT: 找不到阅读器附件 ${itemID}`));return; }
+      if (!item) { this.reportError(new Error(`ChatGPT: 找不到阅读器附件 ${itemID}`));return; }
       analyze.disabled=true;
       analyze.textContent="⏳ 准备中";
       void this.runForItem(item).then(ok=>{
         analyze.disabled=false;
         analyze.textContent=ok ? "✓ 已启动" : "⚠ 查看日志";
         doc.defaultView?.setTimeout(()=>{analyze.textContent="✦ ChatGPT";},4500);
-      });
+      }).catch(e=>{ analyze.disabled=false;analyze.textContent="⚠ 错误";this.reportError(e); });
     });
     root.appendChild(analyze);
     const edit=doc.createElement("button");
@@ -110,7 +114,7 @@ DOI：{{doi}}
     edit.title="编辑并保存文献分析 Prompt";
     edit.setAttribute("aria-label","编辑 ChatGPT Prompt");
     edit.style.cssText="border:1px solid var(--color-border,#9ca3af);background:transparent;color:inherit;border-radius:5px;padding:4px 8px;cursor:pointer;";
-    edit.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();this.toggleEditor(doc, edit);});
+    edit.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();try {this.toggleEditor(doc, edit);} catch(err) {this.reportError(err);} });
     root.appendChild(edit);
     append(root);
   },
@@ -154,7 +158,7 @@ DOI：{{doi}}
     make("取消",()=>panel.remove());
     make("保存",()=>{try{this.setTemplate(area.value);this.setAttachmentMode(includeAll.checked ? "all" : "si");panel.remove();}catch(e){note.textContent=e.message;}});
     panel.appendChild(controls);
-    doc.body.appendChild(panel);
+    (doc.body || doc.documentElement).appendChild(panel);
     area.focus();
   },
   // Keep a right-click fallback in the library, but the primary UI is the reader toolbar.
@@ -419,7 +423,7 @@ DOI：{{doi}}
       if(open.exitValue!==0) throw new Error(`无法在后台启动 Terminal (exit=${open.exitValue})`);
       Zotero.debug(`ZoteroChatGPTBridge silent launch: ${draft.title}, ${draft.files.length} files, ${draft.runDir}`);
       return true;
-    } catch(e) {Zotero.logError(e);return false;}
+    } catch(e) {this.reportError(e);return false;}
     finally {this.busy=false;}
   }
 };
