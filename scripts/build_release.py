@@ -10,7 +10,7 @@ import re
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.3.9"
+VERSION = "0.4.0-beta.1"
 ASSET_NAME = f"Zotero_to_ChatGPT_Direct_v{VERSION}_Zotero10.xpi"
 FILES = ["manifest.json", "bootstrap.js", "bridge.js", "safari_source.js", "windows_source.js"]
 
