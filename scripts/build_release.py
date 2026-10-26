@@ -26,7 +26,7 @@ def build(owner, repo):
     # Inline the AppleScript as a JavaScript string, exactly as bootstrap expects.
     apple = (source / "Safari_自动上传.applescript").read_text(encoding="utf-8")
     js_source = "var SAFARI_SOURCE = " + json.dumps(apple, ensure_ascii=False) + ";\n"
-    windows = (source / "Windows_自动上传.ps1").read_text(encoding="utf-8")
+    windows = (source / "windows_upload.ps1").read_text(encoding="utf-8")
     js_windows = "var WINDOWS_SOURCE = " + json.dumps(windows, ensure_ascii=False) + ";\n"
     generated = {
         "manifest.json": (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(),
