@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta9 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta10 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -410,24 +410,94 @@ function Open-FileDialog([System.Windows.Automation.AutomationElement]$ChatWindo
     return $null
 }
 
+function Log-FilenameCandidates([System.Windows.Automation.AutomationElement]$Dialog) {
+    # Log only control types/IDs under the filename widget; no displayed
+    # text, titles, document names, contents, or local attachment paths.
+    try {
+        $idFilter=[System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1148')
+        $roots=$Dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$idFilter)
+        Log ('FILENAME_1148_MATCHES ' + $roots.Count)
+        $index=0
+        foreach ($root in $roots) {
+            if ($index -ge 8) { break }
+            try {
+                Log ('FILENAME_1148_NODE type=' + $root.Current.ControlType.ProgrammaticName +
+                    ' enabled=' + $root.Current.IsEnabled +
+                    ' offscreen=' + $root.Current.IsOffscreen)
+                $children=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                    [System.Windows.Automation.Condition]::TrueCondition)
+                $j=0
+                foreach ($child in $children) {
+                    if ($j -ge 16) { break }
+                    Log ('FILENAME_CHILD type=' + $child.Current.ControlType.ProgrammaticName +
+                        ' id=' + [string]$child.Current.AutomationId)
+                    $j++
+                }
+            } catch { Log ('FILENAME_CANDIDATE_ERROR ' + $_.Exception.GetType().Name) }
+            $index++
+        }
+    } catch {
+        Log ('FILENAME_ENUM_ERROR ' + $_.Exception.GetType().Name)
+    }
+}
+
 function Find-FilenameControl([System.Windows.Automation.AutomationElement]$Dialog) {
-    # Common Item Dialog usually assigns automation ID 1148 to filename control.
-    $idFilter = [System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::AutomationIdProperty, '1148')
-    $field = $Dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $idFilter)
-    if ($null -eq $field) {
-        $field = Find-UIA $Dialog @([System.Windows.Automation.ControlType]::Edit,
-            [System.Windows.Automation.ControlType]::ComboBox) '(?i)(File name|文件名)'
+    # Win11 file pickers may expose AutomationId 1148 as Pane, ComboBox and
+    # Edit at different depths. NEVER return a Pane: it cannot accept focus.
+    $idFilter=[System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1148')
+    $editFilter=[System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Edit)
+    $roots=$Dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,$idFilter)
+    $candidates=New-Object 'System.Collections.Generic.List[System.Windows.Automation.AutomationElement]'
+
+    # Prefer the actual 1148 Edit, rather than the first 1148 Pane.
+    foreach ($root in $roots) {
+        try {
+            if ($root.Current.ControlType -eq [System.Windows.Automation.ControlType]::Edit -and
+                $root.Current.IsEnabled -and -not $root.Current.IsOffscreen) {
+                $candidates.Add($root)
+            }
+        } catch {}
     }
-    if ($null -eq $field) { return $null }
-    if ($field.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox) {
-        $child = $field.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
-            [System.Windows.Automation.PropertyCondition]::new(
-                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-                [System.Windows.Automation.ControlType]::Edit))
-        if ($null -ne $child) { return $child }
+    if ($candidates.Count -eq 1) {
+        Log 'FILENAME_EDIT_FOUND via=1148-direct'
+        return $candidates[0]
     }
-    return $field
+    if ($candidates.Count -gt 1) {
+        Log 'FILENAME_EDIT_AMBIGUOUS multiple-direct-1148-edits'
+        Log-FilenameCandidates $Dialog
+        return $null
+    }
+
+    # Traverse the Pane/ComboBox with ID 1148 and select exactly one Edit.
+    foreach ($root in $roots) {
+        try {
+            $edits=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$editFilter)
+            foreach ($edit in $edits) {
+                if (-not $edit.Current.IsEnabled -or $edit.Current.IsOffscreen) { continue }
+                $seen=$false
+                foreach ($prev in $candidates) { if ($prev.Equals($edit)) { $seen=$true; break } }
+                if (-not $seen) { $candidates.Add($edit) }
+            }
+        } catch {}
+    }
+    if ($candidates.Count -eq 1) {
+        Log 'FILENAME_EDIT_FOUND via=1148-descendant'
+        return $candidates[0]
+    }
+    if ($candidates.Count -gt 1) {
+        Log 'FILENAME_EDIT_AMBIGUOUS multiple-descendant-edits'
+        Log-FilenameCandidates $Dialog
+        return $null
+    }
+    # Do not guess between an address bar, search field or file name. A
+    # focused click on the wrong input could expose private document paths.
+    Log 'FILENAME_EDIT_NOT_FOUND'
+    Log-FilenameCandidates $Dialog
+    return $null
 }
 
 function Test-VerifiedFileNameFocus([System.Windows.Automation.AutomationElement]$Dialog,
@@ -445,11 +515,23 @@ function Write-FilenameWithKeyboard([System.Windows.Automation.AutomationElement
                                     [string]$FullPath) {
     # Fallback when this Windows Common File Dialog field has no ValuePattern.
     # Only use Ctrl+A after focus and dialog ownership are verified.
-    try { $Field.SetFocus() } catch {
-        Log ('FILENAME_FOCUS_ERROR ' + $_.Exception.GetType().Name)
+    # Reject outer Pane/ComboBox explicitly, even if upstream selection regresses.
+    if ($Field.Current.ControlType -ne [System.Windows.Automation.ControlType]::Edit) {
+        Log 'FILENAME_NOT_EDIT stopped'
         return $false
     }
+    try { $Field.SetFocus() } catch {
+        Log ('FILENAME_SETFOCUS_UNAVAILABLE ' + $_.Exception.GetType().Name)
+    }
     Start-Sleep -Milliseconds 150
+    if (-not (Test-VerifiedFileNameFocus $Dialog $Field)) {
+        Log 'FILENAME_FOCUS_RETRY_VERIFIED_MOUSE'
+        if (-not (Click-UIA-Verified $Field)) {
+            Log 'FILENAME_FOCUS_MOUSE_NOT_VERIFIED stopped'
+            return $false
+        }
+        Start-Sleep -Milliseconds 180
+    }
     if (-not (Test-VerifiedFileNameFocus $Dialog $Field)) {
         Log 'FILENAME_FOCUS_NOT_VERIFIED stopped'
         return $false
@@ -600,7 +682,7 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta9 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta10 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
