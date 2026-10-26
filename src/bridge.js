@@ -368,7 +368,7 @@ DOI：{{doi}}
       displayName:f.filename||f.label||("attachment."+f.ext),
       originalPath:f.sourcePath,sourceName:f.filename,size:f.size
     }));
-    for (const f of files) if (/[\\r\\n]/.test(f.originalPath))
+    for (const f of files) if (/[\r\n]/.test(f.originalPath))
       throw new Error("Attachment path contains a newline");
     const promptPath=PathUtils.join(runDir,"prompt.txt");
     const uploadListPath=PathUtils.join(runDir,"upload_paths.txt");
@@ -376,9 +376,9 @@ DOI：{{doi}}
     const statusPath=PathUtils.join(runDir,"status.log");
     const prompt=this.renderPrompt(data,files);
     await IOUtils.writeUTF8(promptPath,prompt);
-    await IOUtils.writeUTF8(uploadListPath,files.map(f=>f.originalPath).join("\\n")+"\\n");
+    await IOUtils.writeUTF8(uploadListPath,files.map(f=>f.originalPath).join("\n")+"\n");
     await IOUtils.writeUTF8(scriptPath,this.windowsScriptSource);
-    await IOUtils.writeUTF8(statusPath,"BRIDGE_BUILD v0.4.0beta1 windows\\n");
+    await IOUtils.writeUTF8(statusPath,"BRIDGE_BUILD v0.4.0beta1 windows\n");
     await IOUtils.writeUTF8(PathUtils.join(runDir,"selection.json"),
       JSON.stringify({itemID:data.record.id,title:data.title,files,
         missing:data.missing,ignored:data.ignored,generatedAt:new Date().toISOString()},null,2));
