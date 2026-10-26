@@ -216,7 +216,8 @@ function Log-UploadCandidates([System.Windows.Automation.AutomationElement]$Wind
     try {
         foreach ($type in @([System.Windows.Automation.ControlType]::Button,
                             [System.Windows.Automation.ControlType]::MenuItem,
-                            [System.Windows.Automation.ControlType]::Edit)) {
+                            [System.Windows.Automation.ControlType]::Edit,
+                            [System.Windows.Automation.ControlType]::Document)) {
             $filter = [System.Windows.Automation.PropertyCondition]::new(
                 [System.Windows.Automation.AutomationElement]::ControlTypeProperty,$type)
             $items = $Window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$filter)
@@ -373,12 +374,14 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
     $pattern = '(?i)(Ask anything|Message ChatGPT|Ask ChatGPT|向 ChatGPT 提问|询问 ChatGPT|发送消息给 ChatGPT|问任何问题|prompt-textarea|composer-input|message input|Write a message|Ask a question)'
     $editor = $null
     for ($attempt=0; $attempt -lt 8; $attempt++) {
-        $editor = Find-UIA $Window @([System.Windows.Automation.ControlType]::Edit) $pattern
+        # Chromium may expose a contenteditable composer as Document instead of Edit.
+        $editor = Find-UIA $Window @([System.Windows.Automation.ControlType]::Edit,
+          [System.Windows.Automation.ControlType]::Document) $pattern
         if ($null -ne $editor) { break }
         Start-Sleep -Milliseconds 500
     }
     if ($null -eq $editor) {
-        Log 'PROMPT_CLIPBOARD_READY composer not identified in Edit controls; Ctrl+V manually'
+        Log 'PROMPT_CLIPBOARD_READY composer not identified in Edit/Document controls; Ctrl+V manually'
         return
     }
     try {
