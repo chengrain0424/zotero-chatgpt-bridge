@@ -21,7 +21,7 @@ jobs:
       - name: Test build package
         run: |
           python3 scripts/build_release.py --owner dummy-owner --repo dummy-repo
-          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.6*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
+          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.7*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
           python3 -m json.tool dist/updates.json > /dev/null
 
       - name: Build experimental Windows installer
@@ -32,7 +32,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Zotero-Windows-Experimental-XPI
-          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.6_Zotero10.xpi
+          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.7_Zotero10.xpi
           if-no-files-found: error
           retention-days: 30
 
