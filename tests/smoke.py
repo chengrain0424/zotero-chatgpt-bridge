@@ -4,7 +4,7 @@ import json, re, tempfile, os
 ROOT=Path(__file__).resolve().parents[1]
 src=ROOT/'src'
 manifest=json.loads((src/'manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='0.4.0-beta.1'
+assert manifest['version']=='0.4.0-beta.2'
 win=(src/'Windows_自动上传.ps1').read_text(encoding='utf-8')
 assert 'NO_AUTO_SEND' in win
 assert 'Select-ExactFile' in win
