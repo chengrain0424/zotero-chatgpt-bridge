@@ -360,7 +360,7 @@ DOI：{{doi}}
   },
   async prepareWindows(item) {
     const data=await this.attachmentsFor(item);
-    if (typeof this.windowsScriptSource!=="string" || !this.windowsScriptSource.includes("WIN_SCRIPT_BUILD v0.4.0beta7 uia-20261026"))
+    if (typeof this.windowsScriptSource!=="string" || !this.windowsScriptSource.includes("WIN_SCRIPT_BUILD v0.4.0beta7 uia-20261027"))
       throw new Error("Windows automation script missing from installed package");
     const stamp=new Date().toISOString().replace(/[^0-9]/g,"").slice(0,14);
     const nonce=Math.random().toString(36).slice(2,10);
