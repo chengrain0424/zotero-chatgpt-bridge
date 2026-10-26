@@ -68,3 +68,7 @@ beta.4 的实际 Windows 日志显示已识别到 `Add files and more`，但该�
 ### Windows beta.6 文件选择器检测修复
 
 beta.5 运行日志表明网页的 `Add files and more` 和 `Upload from computer` 已被点击，但随后没有识别到 Windows 文件对话框。beta.6 不再假设原生文件选择器必须由 Edge/Chrome 的前台进程承载；在尝试选取文件前会验证文件窗口属于当前 ChatGPT 浏览器窗口，且包含文件名输入控件。如果暂时没能检测到，日志会记录 `WINDOW_STATE`（进程/窗口类型，不包含网页标题），并只在确认为 ChatGPT 前台时尝试一次经过命中验证的上传菜单鼠标点击。请勿自动发送文献和 Prompt 前未经确认的内容；务必手动确认已上传附件。
+
+### Windows beta.7：上传菜单打开后立即关闭
+
+beta.6 的真实运行日志表明，附件加号已由物理鼠标点击成功打开；但调用 ChatGPT 的 `Upload from computer` 这一浏览器 UIA 控件的 `InvokePattern` 后，原生文件选择器没有出现。beta.7 仅对**可命中验证的指定上传菜单项**使用单次物理鼠标点击，避免 UIA 的程序式 InvokePattern 因缺少网页用户激活而只关闭菜单。若控件无法验证，则停止；不会反复点击 `+`。仍是实验修复，需实际 Edge 验证上传结果。
