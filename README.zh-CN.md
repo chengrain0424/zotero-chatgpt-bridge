@@ -60,3 +60,7 @@ Windows 代码位于 `feature/windows-edge-chrome` 分支，**尚未在真实 Wi
 ### Windows beta.4 上传按钮诊断
 
 如果能打开 ChatGPT 但没有自动选择文件，请检查该次任务目录的 `status.log` 中的 `UPLOAD_PLUS_*`、`UPLOAD_MENU_*` 和 `UIA_CANDIDATE`。请先在 Edge/Chrome 完成登录，并确认当前是普通 Chat。程序会首先尝试将 Prompt 粘贴到空白输入框，无法确认输入框时仍会把 Prompt 留在剪贴板供 Ctrl+V。自动上传为实验功能，**文件选择器关闭不代表 ChatGPT 已成功读取文件，也不会自动发送**。提供错误日志前请先隐藏本地路径和私人标题。
+
+### Windows beta.5 故障定位说明
+
+beta.4 的实际 Windows 日志显示已识别到 `Add files and more`，但该控件没有实现通常使用的 UI Automation 调用动作。beta.5 增加焦点确认后的空格键和经过 UIA 命中验证的鼠标点击后备方案，补齐缺失的 `Log-UploadCandidates` 诊断函数，并进一步尝试把 ChatGPT 编辑框识别为 `Document` 类型。仍属于实验性自动化，**不能保证当前网页版 ChatGPT 已成功添加附件或填入 Prompt**，也不会自动点击发送。
