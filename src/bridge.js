@@ -6,10 +6,14 @@ var ZCGBridge = {
   addonID: "zotero-chatgpt-safari@local.bridge",
   promptPref: "extensions.zoteroChatGPTBridge.promptTemplate",
   attachmentModePref: "extensions.zoteroChatGPTBridge.attachmentMode",
+  browserPref: "extensions.zoteroChatGPTBridge.windowsBrowser",
+  windowsScriptSource: null,
+  getWindowsBrowser() { try { return Services.prefs.getStringPref(this.browserPref, "edge") === "chrome" ? "chrome" : "edge"; } catch (_) { return "edge"; } },
+  setWindowsBrowser(value) { if (!["edge","chrome"].includes(value)) throw new Error("Unsupported browser"); Services.prefs.setStringPref(this.browserPref,value); },
   scriptSource: null,
   busy: false,
   toolbarHandler: null,
-  init(script) { this.scriptSource=script; },
+  init(script, windowsScript) { this.scriptSource=script; this.windowsScriptSource=windowsScript; },
   defaultTemplate: `你是一名严谨的科研文献阅读助手，请只依据本对话上传的文献正文及 SI 进行分析，禁止编造结果或图表信息。
 
 论文：{{title}}
@@ -133,6 +137,13 @@ DOI：{{doi}}
     optionLabel.textContent="包含当前文献条目下全部受支持的本地附件（PDF / DOCX / XLSX 等，不要求文件名含 SI）。取消勾选则仅附加正文 PDF 和名称可识别的 SI。";
     optionRow.appendChild(optionLabel);
     panel.appendChild(optionRow);
+    if (Zotero.isWin) {
+      const browserRow=doc.createElement("label");browserRow.textContent="Windows 浏览器：";
+      const select=doc.createElement("select");
+      for (const name of ["edge","chrome"]) { const option=doc.createElement("option");option.value=name;option.textContent=name==="edge"?"Microsoft Edge":"Google Chrome";select.appendChild(option); }
+      select.value=this.getWindowsBrowser();select.addEventListener("change",()=>this.setWindowsBrowser(select.value));
+      browserRow.appendChild(select);panel.appendChild(browserRow);
+    }
     const area=doc.createElement("textarea");
     area.value=this.getTemplate();area.spellcheck=false;area.maxLength=20000;
     area.style.cssText="width:100%;height:300px;box-sizing:border-box;resize:vertical;border:1px solid #888;border-radius:5px;padding:10px;background:var(--material-background,#fff);color:inherit;line-height:1.5;font-size:12px;";
@@ -153,7 +164,7 @@ DOI：{{doi}}
     if(context && !doc.getElementById("zcg-context-command")){
       const m=doc.createXULElement("menuitem");
       m.id="zcg-context-command";
-      m.setAttribute("label","用 ChatGPT 分析所选论文（Safari）");
+      m.setAttribute("label","用 ChatGPT 分析所选论文");
       m.addEventListener("command",()=>{
         const sel=win.ZoteroPane?.getSelectedItems?.() || [];
         if(sel.length!==1) {Zotero.logError(new Error("ChatGPT: 请只选择一篇论文"));return;}
@@ -247,6 +258,7 @@ DOI：{{doi}}
     } catch (e) { Zotero.debug(`ZoteroChatGPTBridge hardlink unavailable: ${e}`); return false; }
   },
   async prepare(item) {
+    if (Zotero.isWin) return this.prepareWindows(item);
     const data = await this.attachmentsFor(item);
     const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0,14);
     const nonce = Math.random().toString(36).slice(2,9);
@@ -342,6 +354,37 @@ DOI：{{doi}}
     try { Zotero.Utilities.copyToClipboard(prompt); } catch (_) {}
     return {...data, files, linkDir, promptPath, scriptPath, statusPath, uploadListPath, launcherPath, runDir};
   },
+  async prepareWindows(item) {
+    const data=await this.attachmentsFor(item);
+    if (typeof this.windowsScriptSource!=="string" || !this.windowsScriptSource.includes("WIN_SCRIPT_BUILD v0.4.0beta1 uia-20261026"))
+      throw new Error("Windows automation script missing from installed package");
+    const stamp=new Date().toISOString().replace(/[^0-9]/g,"").slice(0,14);
+    const nonce=Math.random().toString(36).slice(2,10);
+    const cache=PathUtils.join(Services.dirsvc.get("TmpD",Ci.nsIFile).path,"ZoteroChatGPTBridge");
+    const runDir=PathUtils.join(cache,"run-"+stamp+"-"+data.record.id+"-"+nonce);
+    await IOUtils.makeDirectory(runDir,{createAncestors:true});
+    const files=data.ordered.map((f,i)=>({
+      role:i===0?"MAIN":f.si?"SI":f.ext==="pdf"?"OTHER_PDF":"OTHER_ATTACHMENT",
+      displayName:f.filename||f.label||("attachment."+f.ext),
+      originalPath:f.sourcePath,sourceName:f.filename,size:f.size
+    }));
+    for (const f of files) if (/[\\r\\n]/.test(f.originalPath))
+      throw new Error("Attachment path contains a newline");
+    const promptPath=PathUtils.join(runDir,"prompt.txt");
+    const uploadListPath=PathUtils.join(runDir,"upload_paths.txt");
+    const scriptPath=PathUtils.join(runDir,"Windows_自动上传.ps1");
+    const statusPath=PathUtils.join(runDir,"status.log");
+    const prompt=this.renderPrompt(data,files);
+    await IOUtils.writeUTF8(promptPath,prompt);
+    await IOUtils.writeUTF8(uploadListPath,files.map(f=>f.originalPath).join("\\n")+"\\n");
+    await IOUtils.writeUTF8(scriptPath,this.windowsScriptSource);
+    await IOUtils.writeUTF8(statusPath,"BRIDGE_BUILD v0.4.0beta1 windows\\n");
+    await IOUtils.writeUTF8(PathUtils.join(runDir,"selection.json"),
+      JSON.stringify({itemID:data.record.id,title:data.title,files,
+        missing:data.missing,ignored:data.ignored,generatedAt:new Date().toISOString()},null,2));
+    try { Zotero.Utilities.copyToClipboard(prompt); } catch (_) {}
+    return {...data,files,runDir,promptPath,uploadListPath,scriptPath,statusPath};
+  },
   runProcess(exePath, argv, sync=true) {
     const executable=Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
     executable.initWithPath(exePath);
@@ -355,8 +398,18 @@ DOI：{{doi}}
     if(this.busy) return false;
     this.busy=true;
     try {
-      if(!Zotero.isMac) throw new Error("仅支持 macOS");
+      if(!Zotero.isMac && !Zotero.isWin) throw new Error("仅支持 macOS / Windows");
       const draft=await this.prepare(item);
+      if (Zotero.isWin) {
+        const args=["-NoProfile","-STA","-ExecutionPolicy","Bypass",
+          "-File",draft.scriptPath,"-Browser",this.getWindowsBrowser(),
+          "-PromptPath",draft.promptPath,"-UploadListPath",draft.uploadListPath,"-StatusPath",draft.statusPath];
+        const powershell=PathUtils.join(Services.dirsvc.get("WinD",Ci.nsIFile).path,
+          "System32","WindowsPowerShell","v1.0","powershell.exe");
+        this.runProcess(powershell,args,false);
+        Zotero.debug("ZoteroChatGPTBridge Windows helper launched: "+draft.runDir);
+        return true;
+      }
       // No modal dialogs or user confirmation; never automatically presses Send.
       const chmod=this.runProcess("/bin/chmod",["700",draft.launcherPath]);
       if(chmod.exitValue!==0) throw new Error("启动脚本 chmod 失败");
