@@ -300,9 +300,13 @@ function Get-FileDialog {
     try {
         $element=[System.Windows.Automation.AutomationElement]::FromHandle($handle)
         if ($null -eq $element) { return $null }
-        # Require the actual native file name field to exist before selecting.
-        $filename = Find-FilenameControl $element
-        if ($null -eq $filename) { return $null }
+        # Confirm the native filename widget belongs to this picker; resolve
+        # its real editable child later, once, to avoid noisy repeated scans.
+        $filenameWidget = $element.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants,
+            [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::AutomationIdProperty, '1148'))
+        if ($null -eq $filenameWidget) { return $null }
         return $element
     } catch { return $null }
 }
