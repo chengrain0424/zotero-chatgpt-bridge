@@ -64,3 +64,7 @@ Windows 代码位于 `feature/windows-edge-chrome` 分支，**尚未在真实 Wi
 ### Windows beta.5 故障定位说明
 
 beta.4 的实际 Windows 日志显示已识别到 `Add files and more`，但该控件没有实现通常使用的 UI Automation 调用动作。beta.5 增加焦点确认后的空格键和经过 UIA 命中验证的鼠标点击后备方案，补齐缺失的 `Log-UploadCandidates` 诊断函数，并进一步尝试把 ChatGPT 编辑框识别为 `Document` 类型。仍属于实验性自动化，**不能保证当前网页版 ChatGPT 已成功添加附件或填入 Prompt**，也不会自动点击发送。
+
+### Windows beta.6 文件选择器检测修复
+
+beta.5 运行日志表明网页的 `Add files and more` 和 `Upload from computer` 已被点击，但随后没有识别到 Windows 文件对话框。beta.6 不再假设原生文件选择器必须由 Edge/Chrome 的前台进程承载；在尝试选取文件前会验证文件窗口属于当前 ChatGPT 浏览器窗口，且包含文件名输入控件。如果暂时没能检测到，日志会记录 `WINDOW_STATE`（进程/窗口类型，不包含网页标题），并只在确认为 ChatGPT 前台时尝试一次经过命中验证的上传菜单鼠标点击。请勿自动发送文献和 Prompt 前未经确认的内容；务必手动确认已上传附件。
