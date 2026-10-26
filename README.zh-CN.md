@@ -44,3 +44,15 @@
 ## 版本路线
 
 建议先公开 **macOS + Safari Beta**，随后抽象浏览器适配层：macOS Chrome、Edge、自定义路径；最后开发 Windows 专用的文件对话框自动化。不要把未测试的平台标成已支持。
+
+## Windows 10/11 + Zotero 10（实验性版本）
+
+Windows 代码位于 `feature/windows-edge-chrome` 分支，**尚未在真实 Windows 桌面完成端到端验证**。请从该分支自行构建 XPI；旧版 v0.3.9 XPI 仍然只支持 macOS。
+
+- 在 PDF 阅读器的 `⚙` 选择 Edge（默认）或 Chrome。请提前在目标浏览器登录 ChatGPT，并确认处于普通 Chat。
+- 插件将 Prompt 和 Zotero **原始本地附件绝对路径**写入 `%TEMP%\\ZoteroChatGPTBridge\\run-*`；不复制原始文件，也不需要 Windows 符号链接权限。
+- Windows PowerShell 5.1 辅助脚本通过 UI Automation 尝试打开 ChatGPT 上传菜单和原生文件选择对话框，并逐个选择文件。如果 ChatGPT 网页或系统的无障碍控件变化，可能失败；检测不可靠时会停止。Prompt 同时进入剪贴板，可用 Ctrl+V 手动粘贴。
+- Zotero 和浏览器建议都以普通用户权限运行。请查看任务文件夹里的 `status.log`，并在 ChatGPT 网页上核对全部附件。**文件选择器关闭不代表上传成功**；脚本绝不自动发送。
+- 启动命令只对该 PowerShell 进程采用 `-ExecutionPolicy Bypass`，不修改 Windows 全局设置。建议运行前阅读脚本源码。
+
+**隐私提醒：** 默认收集同一 Zotero 父条目下全部受支持附件；未发表和保密材料务必核对附件及目标 ChatGPT 账户后再使用。
