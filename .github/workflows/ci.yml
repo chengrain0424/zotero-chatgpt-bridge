@@ -50,3 +50,16 @@ jobs:
             $errors | ForEach-Object { Write-Host $_.ToString() }
             exit 1
           }
+      - name: Run helper startup smoke without opening a browser
+        shell: powershell
+        run: |
+          $status = Join-Path $env:RUNNER_TEMP 'zcg_status.log'
+          $prompt = Join-Path $env:RUNNER_TEMP 'zcg_prompt.txt'
+          $upload = Join-Path $env:RUNNER_TEMP 'zcg_empty_upload_list.txt'
+          [IO.File]::WriteAllText($prompt, 'CI test prompt')
+          [IO.File]::WriteAllText($upload, '')
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -ExecutionPolicy Bypass -File 'src/windows_upload.ps1' -Browser edge -PromptPath $prompt -UploadListPath $upload -StatusPath $status
+          $output = [IO.File]::ReadAllText($status)
+          Write-Host $output
+          if ($output -notmatch 'POWERSHELL_ENTERED' -or $output -notmatch 'WIN_SCRIPT_BUILD') { throw 'PowerShell helper did not complete initialization' }
+          if ($output -match 'INITIALIZATION_ERROR' -or $output -match 'START_BROWSER') { throw 'Unexpected PowerShell startup behavior' }
