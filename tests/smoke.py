@@ -26,7 +26,7 @@ assert 'ControlType]::Document' in win
 assert 'PROMPT_PASTE_VERIFIED' in win
 assert win.index('Place-Prompt $browserWindow.Element $prompt') < win.index('for ($i=0; $i -lt $paths.Count; $i++)')
 assert 'SetForegroundWindow' in win
-assert 'WIN_SCRIPT_BUILD v0.4.0beta7 uia-20261026' in win
+assert 'WIN_SCRIPT_BUILD v0.4.0beta7 uia-20261027' in win
 assert 'prepareWindows(item)' in (src/'bridge.js').read_text(encoding='utf-8')
 assert manifest['applications']['zotero']['id']=='zotero-chatgpt-safari@local.bridge'
 assert manifest['applications']['zotero']['strict_max_version']=='10.0.*'
