@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta1 uia-20261026
+# WIN_SCRIPT_BUILD v0.4.0beta4 uia-20261026
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -162,21 +162,44 @@ function Wait-FileDialog([int]$Seconds) {
 }
 
 function Open-FileDialog([System.Windows.Automation.AutomationElement]$ChatWindow) {
-    # Match known accessible names; stop if ChatGPT's UI has changed.
+    # ChatGPT typically has a composer "+" button opening an upload menu.
+    # Avoid clicking the same toggle twice (previous uploader reopened/closed it).
     $buttons = @([System.Windows.Automation.ControlType]::Button,
                  [System.Windows.Automation.ControlType]::MenuItem)
-    $upload = Find-UIA $ChatWindow $buttons '(?i)(Attach files|Add photos.{0,8}files|Upload files|上传文件|添加照片和文件|添加附件)'
-    if ($null -ne $upload -and (Invoke-UIA $upload)) {
-        $dialog = Wait-FileDialog 3
-        if ($null -ne $dialog) { return $dialog }
+    $plusLabels = '(?i)(composer-plus-btn|Add files and more|Add photos and files|Add photos & files|Attach files|添加文件|添加照片|添加附件|附件|Add photos|Upload files)'
+    $uploadLabels = '(?i)(Upload files|Upload from computer|Add photos.{0,8}files|从电脑上传|上传文件|添加照片和文件)'
+    $plus = Find-UIA $ChatWindow $buttons $plusLabels
+    if ($null -eq $plus) {
+        Log 'UPLOAD_PLUS_NOT_FOUND'
+        Log-UploadCandidates $ChatWindow
+        return $null
     }
-    $add = Find-UIA $ChatWindow $buttons '(?i)(composer-plus-btn|Add files and more|Add photos and files|Add photos & files|添加文件|添加照片|\bAttach\b)'
-    if ($null -eq $add -or -not (Invoke-UIA $add)) { return $null }
-    $dialog = Wait-FileDialog 2
-    if ($null -ne $dialog) { return $dialog }
-    $menu = Find-UIA $ChatWindow $buttons '(?i)(Upload files|Upload from computer|Add photos.{0,8}files|上传文件|从电脑上传|添加照片和文件)'
-    if ($null -eq $menu -or -not (Invoke-UIA $menu)) { return $null }
-    return Wait-FileDialog 5
+    Log ('UPLOAD_PLUS_FOUND name=' + [string]$plus.Current.Name)
+    if (-not (Invoke-UIA $plus)) {
+        Log 'UPLOAD_PLUS_INVOKE_FAILED'
+        Log-UploadCandidates $ChatWindow
+        return $null
+    }
+    Log 'UPLOAD_PLUS_CLICKED'
+    $dialog = Wait-FileDialog 3
+    if ($null -ne $dialog) { Log 'PICKER_OPEN_DIRECT'; return $dialog }
+
+    # The first click usually opens a menu. Retry querying the *new* tree.
+    $menu = Find-UIA $ChatWindow $buttons $uploadLabels
+    if ($null -eq $menu) {
+        Log 'UPLOAD_MENU_NOT_FOUND'
+        Log-UploadCandidates $ChatWindow
+        return $null
+    }
+    Log ('UPLOAD_MENU_FOUND name=' + [string]$menu.Current.Name)
+    if (-not (Invoke-UIA $menu)) {
+        Log 'UPLOAD_MENU_INVOKE_FAILED'
+        return $null
+    }
+    Log 'UPLOAD_MENU_CLICKED'
+    $dialog = Wait-FileDialog 7
+    if ($null -eq $dialog) { Log 'PICKER_NOT_DETECTED_AFTER_UPLOAD_MENU' }
+    return $dialog
 }
 
 function Find-FilenameControl([System.Windows.Automation.AutomationElement]$Dialog) {
@@ -275,12 +298,16 @@ try {
     [System.Windows.Forms.Clipboard]::SetText($prompt)
     $exe = Resolve-Browser
     Log ('START_BROWSER ' + $Browser + ' UPLOAD_EXPECTED ' + $paths.Count)
-    Start-Process -FilePath $exe -ArgumentList @('--new-window', 'https://chatgpt.com/')
+    # Chromium accessibility can be disabled until a screen reader is detected.
+    # The flag activates the renderer's UIA tree for both Edge and Chrome.
+    Start-Process -FilePath $exe -ArgumentList @('--force-renderer-accessibility', '--new-window', 'https://chatgpt.com/')
     $browserWindow = Wait-ChatWindow 25
     if ($null -eq $browserWindow) {
         throw '没有检测到位于前台的 ChatGPT 浏览器窗口。请先登录 ChatGPT，再手动附加文件。'
     }
     Log 'CHAT_WINDOW_VERIFIED title contains ChatGPT'
+    # Prompt is independent of uploads; a failed picker must never suppress it.
+    Place-Prompt $browserWindow.Element $prompt
     for ($i=0; $i -lt $paths.Count; $i++) {
         if ($null -ne (Get-FileDialog)) { throw '上一个文件选择器仍处于打开状态。' }
         [void][ZcgWin32]::SetForegroundWindow($browserWindow.Handle)
@@ -294,10 +321,6 @@ try {
         Log ('FILE_PICKER_CLOSED ' + ($i+1) + '/' + $paths.Count)
         Start-Sleep -Milliseconds 1100
     }
-    [void][ZcgWin32]::SetForegroundWindow($browserWindow.Handle)
-    $foreground = Wait-ChatWindow 2
-    if ($null -ne $foreground) { Place-Prompt $foreground.Element $prompt }
-    else { [System.Windows.Forms.Clipboard]::SetText($prompt); Log 'PROMPT_CLIPBOARD_READY chat window not foreground' }
     Log ('ALL_PICKERS_CLOSED ' + $paths.Count)
     Log 'NO_AUTO_SEND verify files and normal Chat mode before submitting'
 } catch {
