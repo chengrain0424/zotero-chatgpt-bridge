@@ -66,3 +66,7 @@ Windows support is under active development in the `feature/windows-edge-chrome`
 - Windows PowerShell execution is invoked with process-local `-ExecutionPolicy Bypass` for the packaged helper. Review the source before use; no global execution-policy setting is changed.
 
 **Privacy:** All supported sibling attachments are selected by default. Do not use confidential or unpublished files until you have reviewed the selected files, their destination account and the applicable data policy.
+
+### Windows beta.4 upload-button diagnostics
+
+If ChatGPT opens but no attachment chooser appears, inspect the task's `status.log` for `UPLOAD_PLUS_*`, `UPLOAD_MENU_*`, and `UIA_CANDIDATE` entries. Sign into a regular Chat in Edge or Chrome first. The helper attempts prompt paste before selecting attachments; when the composer cannot be verified, the prompt stays on the clipboard for manual Ctrl+V. This is experimental: closing the picker does not prove file ingestion, and **Send is never clicked**. Redact paths/private titles before sharing logs.
