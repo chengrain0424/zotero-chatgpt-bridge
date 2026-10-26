@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta8 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta9 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -430,31 +430,115 @@ function Find-FilenameControl([System.Windows.Automation.AutomationElement]$Dial
     return $field
 }
 
-function Select-ExactFile([System.Windows.Automation.AutomationElement]$Dialog, [string]$FullPath) {
-    if (-not [System.IO.File]::Exists($FullPath)) { throw "本地文件不存在：$FullPath" }
-    $field = Find-FilenameControl $Dialog
-    if ($null -eq $field) { throw '未找到原生对话框的文件名输入框；请手动上传。' }
-    try {
-        # Locale-independent, preserves Chinese paths, no Select All in Zotero folders.
-        $value = $field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-        $value.SetValue($FullPath)
-        if ($value.Current.Value -ne $FullPath) { throw '文件名未正确写入' }
-    } catch {
-        throw "无法安全设置文件名输入框：$($_.Exception.Message)"
+function Test-VerifiedFileNameFocus([System.Windows.Automation.AutomationElement]$Dialog,
+                                    [System.Windows.Automation.AutomationElement]$Field) {
+    # CRITICAL: Ctrl+A must never reach the file list, address bar, or chat box.
+    $active=Get-FileDialog
+    if ($null -eq $active -or -not $active.Equals($Dialog)) { return $false }
+    $focused=[System.Windows.Automation.AutomationElement]::FocusedElement
+    if ($null -eq $focused) { return $false }
+    return (Test-UIATarget $Field $focused)
+}
+
+function Write-FilenameWithKeyboard([System.Windows.Automation.AutomationElement]$Dialog,
+                                    [System.Windows.Automation.AutomationElement]$Field,
+                                    [string]$FullPath) {
+    # Fallback when this Windows Common File Dialog field has no ValuePattern.
+    # Only use Ctrl+A after focus and dialog ownership are verified.
+    try { $Field.SetFocus() } catch {
+        Log ('FILENAME_FOCUS_ERROR ' + $_.Exception.GetType().Name)
+        return $false
     }
-    $ok = $Dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+    Start-Sleep -Milliseconds 150
+    if (-not (Test-VerifiedFileNameFocus $Dialog $Field)) {
+        Log 'FILENAME_FOCUS_NOT_VERIFIED stopped'
+        return $false
+    }
+    Log 'FILENAME_FOCUS_VERIFIED'
+    try {
+        [System.Windows.Forms.Clipboard]::SetText($FullPath)
+        if (-not (Test-VerifiedFileNameFocus $Dialog $Field)) {
+            Log 'FILENAME_FOCUS_CHANGED_BEFORE_PASTE stopped'
+            return $false
+        }
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait('^v')
+        Start-Sleep -Milliseconds 350
+        if (-not (Test-VerifiedFileNameFocus $Dialog $Field)) {
+            Log 'FILENAME_FOCUS_CHANGED_AFTER_PASTE stopped'
+            return $false
+        }
+        # Read back what was actually pasted using Ctrl+A / Ctrl+C INSIDE the
+        # verified file name control. Without a match, never click "Open".
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait('^c')
+        Start-Sleep -Milliseconds 180
+        $copied=[System.Windows.Forms.Clipboard]::GetText()
+        if (-not [string]::Equals($copied,$FullPath,[System.StringComparison]::Ordinal)) {
+            Log 'FILENAME_PASTE_READBACK_MISMATCH stopped'
+            return $false
+        }
+        Log 'FILENAME_KEYBOARD_READBACK_VERIFIED'
+        return $true
+    } catch {
+        Log ('FILENAME_KEYBOARD_ERROR ' + $_.Exception.GetType().Name)
+        return $false
+    } finally {
+        # The clipboard was previously holding the Zotero-generated Prompt.
+        # Restore that fallback rather than leaving the PDF path copied.
+        try {
+            if (-not [string]::IsNullOrEmpty($script:PromptValue)) {
+                [System.Windows.Forms.Clipboard]::SetText($script:PromptValue)
+            }
+        } catch {}
+    }
+}
+
+function Select-ExactFile([System.Windows.Automation.AutomationElement]$Dialog, [string]$FullPath) {
+    if (-not [System.IO.File]::Exists($FullPath)) { throw '待上传的本地附件已不存在，请重新在 Zotero 中选择。' }
+    if ($null -eq (Get-FileDialog)) { throw '原生文件选择器不是当前活动窗口，已停止。' }
+    $field=Find-FilenameControl $Dialog
+    if ($null -eq $field) { throw '未找到可确认的文件名输入框，已停止。' }
+    try {
+        $controlType=$field.Current.ControlType.ProgrammaticName
+        $controlId=[string]$field.Current.AutomationId
+        Log ('FILENAME_FIELD type=' + $controlType + ' automationId=' + $controlId)
+    } catch {}
+    $verified=$false
+    # First try an actual writable ValuePattern if offered by Windows UIA.
+    try {
+        $value=$field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+        if (-not $value.Current.IsReadOnly) {
+            $value.SetValue($FullPath)
+            $verified=[string]::Equals([string]$value.Current.Value,
+                                      $FullPath,[System.StringComparison]::Ordinal)
+            if ($verified) { Log 'FILENAME_VALUEPATTERN_VERIFIED' }
+        }
+    } catch {
+        Log ('FILENAME_VALUEPATTERN_UNAVAILABLE ' + $_.Exception.GetType().Name)
+    }
+    if (-not $verified) {
+        $verified=Write-FilenameWithKeyboard $Dialog $field $FullPath
+    }
+    if (-not $verified) {
+        throw '无法验证文件名输入框中的完整附件路径，未点击“打开”。'
+    }
+    if ($null -eq (Get-FileDialog)) { throw '文件选择器在确认路径后已失去焦点，已停止。' }
+    $ok=$Dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
         [System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::AutomationIdProperty, '1'))
+            [System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1'))
     if ($null -eq $ok) {
-        $ok = Find-UIA $Dialog @([System.Windows.Automation.ControlType]::Button) '^(Open|打开)(\s|$)'
+        $ok=Find-UIA $Dialog @([System.Windows.Automation.ControlType]::Button) '^(Open|打开)(\s|$)'
     }
     if ($null -eq $ok -or -not (Invoke-UIA $ok)) {
-        throw '文件名已填写，但无法确定“打开”按钮；请手动点击，自动化已停止。'
+        throw '路径已验证，但无法点击文件选择器的“打开”按钮。'
     }
-    Start-Sleep -Milliseconds 800
+    Log 'FILENAME_OPEN_CLICKED'
+    Start-Sleep -Milliseconds 900
     if ($null -ne (Get-FileDialog)) {
-        throw '文件选择器没有关闭；请检查文件名/权限并手动完成上传。'
+        throw '文件选择器未关闭，请检查所选文件或权限。'
     }
+    Log 'FILENAME_PICKER_CLOSED'
 }
 
 function Read-EditorText([System.Windows.Automation.AutomationElement]$Editor) {
@@ -516,7 +600,7 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta8 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta9 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
@@ -527,6 +611,7 @@ try {
         }
     }
     $prompt = [System.IO.File]::ReadAllText($PromptPath, [System.Text.Encoding]::UTF8)
+    $script:PromptValue=$prompt
     if (-not $prompt.Trim()) { throw 'Prompt 为空，已停止。' }
     [System.Windows.Forms.Clipboard]::SetText($prompt)
     $exe = Resolve-Browser
