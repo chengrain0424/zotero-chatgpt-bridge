@@ -30,7 +30,7 @@ assert 'KeyboardSpace' in win
 assert 'VerifiedMouseClick' in win
 assert 'ControlType]::Document' in win
 assert 'PROMPT_PASTE_VERIFIED' in win
-assert win.index('Place-Prompt $browserWindow.Element $prompt') < win.index('for ($i=0; $i -lt $paths.Count; $i++)')
+assert win.index('for ($i=0; $i -lt $paths.Count; $i++)') < win.index('Place-Prompt $foreground.Element $prompt')
 assert 'SetForegroundWindow' in win
 assert 'WIN_SCRIPT_BUILD v0.4.0beta8 uia-20261027' in win
 assert 'prepareWindows(item)' in (src/'bridge.js').read_text(encoding='utf-8')
