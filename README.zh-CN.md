@@ -72,3 +72,7 @@ beta.5 运行日志表明网页的 `Add files and more` 和 `Upload from compute
 ### Windows beta.7：上传菜单打开后立即关闭
 
 beta.6 的真实运行日志表明，附件加号已由物理鼠标点击成功打开；但调用 ChatGPT 的 `Upload from computer` 这一浏览器 UIA 控件的 `InvokePattern` 后，原生文件选择器没有出现。beta.7 仅对**可命中验证的指定上传菜单项**使用单次物理鼠标点击，避免 UIA 的程序式 InvokePattern 因缺少网页用户激活而只关闭菜单。若控件无法验证，则停止；不会反复点击 `+`。仍是实验修复，需实际 Edge 验证上传结果。
+
+### Windows beta.8：找到“Add files and more”却不能点击
+
+在 beta.7 日志中，诊断器能枚举到 `Add files and more`，但用于点击的 `Find-UIA` 没有返回按钮。二者检查条件不同：后者会过滤掉暂时禁用和不可见的控件，而诊断器没有过滤禁用状态。beta.8 改为**先选择并上传附件，最后粘贴 Prompt**，避免长文本使输入区域重新渲染；对暂不可用的附件按钮短暂重试并记录 `UPLOAD_PLUS_STATE enabled=...` 和 `offscreen=...`。失败时若 ChatGPT 网页仍在前台，仍会尝试安全地粘贴 Prompt；否则放在剪贴板供手动 Ctrl+V。依然不会自动发送，上传须人工核对。
