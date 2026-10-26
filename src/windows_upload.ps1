@@ -1,4 +1,4 @@
-# Windows ChatGPT upload assistant for Zotero 10
+﻿# Windows ChatGPT upload assistant for Zotero 10
 # WIN_SCRIPT_BUILD v0.4.0beta1 uia-20261026
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
