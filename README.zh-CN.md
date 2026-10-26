@@ -80,3 +80,7 @@ beta.6 的真实运行日志表明，附件加号已由物理鼠标点击成功�
 ### Windows beta.9：Windows 文件名输入框不支持 ValuePattern
 
 beta.8 的实机日志已经确认打开了受 ChatGPT Edge 窗口拥有的原生文件选择器，但其文件名输入框拒绝 `ValuePattern`。beta.9 在校验文件选择器与“文件名”输入框焦点后，用键盘 `Ctrl+A`、`Ctrl+V` 填入 Zotero 原始附件的**完整绝对路径**，再在同一控件内用 `Ctrl+A`、`Ctrl+C` 读回并与原路径逐字核对。只有读回一致才点击“打开”；如果无法确认焦点或内容，立即停止并保留 Prompt 的剪贴板后备。仍然不会自动发送，点击发送前务必核对 ChatGPT 是否确实附加了目标论文。
+
+### Windows beta.10：文件选择器弹出，但文件路径没有填写
+
+beta.9 的实际日志识别到文件选择器，但 `AutomationId 1148` 对应 `ControlType.Pane` 而不是真正的输入框；因此 `ValuePattern` 和 `SetFocus` 都失败。beta.10 枚举同一 1148 控件及其内部子元素，优先唯一且可交互的 `Edit` 类型控件；如自动聚焦失败，仅在目标命中验证后尝试物理鼠标聚焦，再逐字核验填入的 PDF 全路径。不存在明确的唯一输入框时不执行 Ctrl+A、Ctrl+V，也不点击打开。日志会记录控件类型和 ID，而不记录本地 PDF 路径或 Prompt 内容。仍处于实机测试阶段。
