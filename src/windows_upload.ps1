@@ -249,12 +249,30 @@ function Select-ExactFile([System.Windows.Automation.AutomationElement]$Dialog, 
     }
 }
 
+function Read-EditorText([System.Windows.Automation.AutomationElement]$Editor) {
+    try {
+        $p = $Editor.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+        return [string]$p.Current.Value
+    } catch {}
+    try {
+        $p = $Editor.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
+        return [string]$p.DocumentRange.GetText(-1)
+    } catch {}
+    return $null
+}
+
 function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [string]$Prompt) {
-    # Always put prompt on clipboard for manual Ctrl+V fallback.
+    # Clipboard fallback ALWAYS works without UI Automation.
     [System.Windows.Forms.Clipboard]::SetText($Prompt)
-    $editor = Find-UIA $Window @([System.Windows.Automation.ControlType]::Edit) '(?i)(Ask anything|Message ChatGPT|Ask ChatGPT|向 ChatGPT 提问|询问 ChatGPT|发送消息给 ChatGPT|问任何问题|prompt-textarea|composer-input)'
+    $pattern = '(?i)(Ask anything|Message ChatGPT|Ask ChatGPT|向 ChatGPT 提问|询问 ChatGPT|发送消息给 ChatGPT|问任何问题|prompt-textarea|composer-input|message input|Write a message|Ask a question)'
+    $editor = $null
+    for ($attempt=0; $attempt -lt 8; $attempt++) {
+        $editor = Find-UIA $Window @([System.Windows.Automation.ControlType]::Edit) $pattern
+        if ($null -ne $editor) { break }
+        Start-Sleep -Milliseconds 500
+    }
     if ($null -eq $editor) {
-        Log 'PROMPT_CLIPBOARD_READY composer not reliably identified; paste manually with Ctrl+V'
+        Log 'PROMPT_CLIPBOARD_READY composer not identified in Edit controls; Ctrl+V manually'
         return
     }
     try {
@@ -264,19 +282,24 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
             Log 'PROMPT_CLIPBOARD_READY composer focus unverified'
             return
         }
-        # Never overwrite a draft whose text cannot be inspected.
-        try {
-            $p = $editor.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-            if (-not [string]::IsNullOrWhiteSpace([string]$p.Current.Value)) {
-                Log 'PROMPT_CLIPBOARD_READY existing composer text; not overwriting'
-                return
-            }
-        } catch {
-            Log 'PROMPT_CLIPBOARD_READY editor content cannot be verified; paste manually'
+        $oldText = Read-EditorText $editor
+        if ($null -eq $oldText) {
+            # Uninspectable composer: don't risk overwriting another draft.
+            Log 'PROMPT_CLIPBOARD_READY editor text unreadable; paste manually'
+            return
+        }
+        if (-not [string]::IsNullOrWhiteSpace($oldText)) {
+            Log 'PROMPT_CLIPBOARD_READY editor not empty; not overwriting'
             return
         }
         [System.Windows.Forms.SendKeys]::SendWait('^v')
-        Log 'PROMPT_PASTE_ATTEMPTED verify composer on ChatGPT page'
+        Start-Sleep -Milliseconds 600
+        $readback = Read-EditorText $editor
+        if ($null -ne $readback -and $readback.Contains($Prompt.Substring(0,[Math]::Min($Prompt.Length,30)))) {
+            Log 'PROMPT_PASTE_VERIFIED (first 30 chars)'
+        } else {
+            Log 'PROMPT_PASTE_UNVERIFIED check ChatGPT composer and paste Ctrl+V manually'
+        }
     } catch {
         Log ('PROMPT_CLIPBOARD_READY paste skipped: ' + $_.Exception.Message)
     }
