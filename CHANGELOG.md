@@ -1,3 +1,11 @@
+## v0.4.0-beta.18 — Full prompt + expanded editor limit (Windows + macOS)
+
+- Install the entire most recent 29,126-character English scientific reading-note Prompt as the shared built-in default. Includes full provenance, main/SI consistency checks, equations, integrated original figures, short Markdown table standards, and the 0–9 section research notebook.
+- Increase custom Prompt validation and Zotero inline/Preferences editor length limits from 20,000 to 50,000 characters. Show live character count in the reader toolbar editor. No content truncation.
+- Recognise the previously saved beta.17 built-in English default as an upgradeable default; preserve genuinely edited/custom prompts.
+- Windows: verify **whole pasted prompt**, not just its first 30 characters; log expected/observed lengths without logging text. Keep Prompt on clipboard if automated verification fails, and never auto-send.
+- Preserve the user-validated multi-attachment PDF/Word upload flow on Windows, and existing macOS Safari automation.
+
 ## v0.4.0-beta.17 — Shared English research note prompt (Windows + macOS)
 
 - Replace the built-in Chinese analysis prompt with the user's full English-language, 0–9 structured critical-reading Markdown note, including source attribution, quantitative evidence, SI navigation, image rules and intentionally blank personal reflections.
