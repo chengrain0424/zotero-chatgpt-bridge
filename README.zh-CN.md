@@ -106,3 +106,7 @@ beta.11 虽然记录 `FILENAME_NATIVE_READBACK_VERIFIED`，但用户实机截图
 已在 Windows 脚本中增加多附件逐个上传：首先上传 Zotero 选中的**正文 PDF**，再按筛选结果上传同一论文父条目下的 SI PDF、DOCX 和旧式 DOC 等受支持文件。每份附件始终使用独立、只有一个文件的暂存目录，避免混入 Zotero 的 `.zotero-reader-state`。每次 Windows 文件选择器关闭后，额外给予浏览器处理时间；上传下一份文件前**重新读取当前 ChatGPT 窗口与“Add files and more”按钮**，等待其变为可用（最多约 50 秒）。如果某份文件无法自动选择，会中止后续附件而不会点击发送。所有文件选择操作结束后才尝试填入 Prompt。文件选择器关闭不保证服务器已经完成上传，请手动核对输入框中的全部附件。
 
 插件提示设置中的“包含全部受支持的本地附件”默认开启；取消勾选则仅上传正文 PDF 与文件名/标题可识别的 SI。为避免漏掉以 `data_1.docx` 等普通名字保存的 SI，通常保留默认设置更实用。日志字段包括 `MULTI_UPLOAD_PLAN`、`STAGED_SINGLE_FILE`、`MULTI_PLUS_READY`、`FILE_START 2/3`、`ALL_PICKERS_CLOSED`。Windows 自动测试覆盖正文 PDF、SI PDF、SI DOCX 三文件单独暂存及排除 Zotero 阅读状态文件；真实 ChatGPT 多附件上传仍需实机确认。
+
+### Windows beta.15：第二份 SI 上传与 Prompt 焦点修复
+
+beta.14 实机日志证实正文 PDF 完成文件选择，第二份 DOCX 的 `Add files and more` 已识别但在 `UIA_MOUSE_TARGET_MISMATCH` 中止；随后因为输入框焦点无法确认，Prompt 仍留在剪贴板。beta.15 保留逐份独立暂存目录与原生文件对话框输入路径流程。新增：附件加号的多个内部点击位置命中检测；每次验证失败重新读取最新浏览器无障碍元素并重试（只会在验证通过后进行**一次**物理点击，不会盲目反复切换“+”）；加入 Chromium RawView 树验证 SVG 图标与按钮的子元素关系；Prompt 先检查已存在内容，自动焦点不可用时仅对确认为 ChatGPT 空编辑框的区域尝试经过命中验证的物理鼠标聚焦，然后再粘贴，绝不覆盖已有草稿、不自动发送。日志可查看 `UPLOAD_PLUS_HIT_RETRY`、`UPLOAD_MENU_PHYSICAL_CLICK item=2`、`FILE_PICKER_CLOSED 2/2`、`PROMPT_FOCUS_VERIFIED`、`PROMPT_PASTE_VERIFIED`。自动化测试不是实际浏览器验证。
