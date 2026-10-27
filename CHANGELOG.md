@@ -5,6 +5,7 @@
 - Retain only three GitHub Releases: historical original **v0.3.0** and **v0.3.9** XPI binaries, and current **v0.4.0**; remove superseded beta release entries without deleting historical Git tags.
 - Prompt editor limit remains 120,000 characters and existing customised templates are preserved.
 - Release publication is checked separately before the historical Release cleanup, so no binary is deleted until the replacement is available.
+- The historical release consolidation job restores exact original XPI binaries and pins 0.3.0/0.3.9 tags to their genuine historical commits before removing old beta Release entries.
 
 ## v0.4.0-beta.21 — Refined research-note layout and verification-status default (Windows + macOS)
 
