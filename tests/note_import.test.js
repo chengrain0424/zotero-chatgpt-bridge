@@ -64,8 +64,6 @@ async function rejects(f,re){await assert.rejects(f,re);}
  assert.equal(imp.fileFromDrop({dataTransfer:{files:[{name:'a.zip',mozFullPath:'/tmp/a.zip'}]}}),'/tmp/a.zip');
  const saved=[];
  const win={alert:s=>saved.push(s)};
- await rejects(()=>imp.runImport(parent,'/tmp/note.zip',win),/Better Notes|unable|archive/i)
-   .catch(()=>{}); // ZIP path uses actual XPCOM and isn't part of this unit test.
  // Verify plain Markdown path and parent binding / no replace-on-duplicate.
  const n=await imp.runImport(parent,'/archive/paper.md',win);
  assert.equal(n.parentID,41);
