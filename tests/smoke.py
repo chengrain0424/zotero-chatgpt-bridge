@@ -179,3 +179,12 @@ assert '"note_import.js"' in bootstrap
 assert 'ZCGNoteImporter.registerItemPane(rootURI)' in bootstrap
 assert 'zcg-import-note-command' in bridge_text
 assert '"note_import.js"' in builder
+
+# Import UX checks: avoid duplicate ZIP attachment, show status and hide on children.
+assert 'keepZipPref: "extensions.zoteroChatGPTBridge.keepNoteZIP"' in importer
+assert 'if(isZip && this.getKeepZIP()' in importer
+assert 'onItemChange:({item,setEnabled})' in importer
+assert 'setEnabled(!!item?.isRegularItem?.())' in importer
+assert 'ChatGPT Bridge Import' in importer
+assert '打开最近导入的笔记' in importer
+assert '已有子笔记 ' in importer
