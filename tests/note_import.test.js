@@ -4,16 +4,23 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
 const data=new Map();
-const parent={id:41,libraryID:1,isRegularItem:()=>true,getField:()=> 'Test paper'};
+const parent={id:41,libraryID:1,isRegularItem:()=>true,getField:()=> 'Test paper',
+  getNotes:()=>[...data.values()].filter(n=>n.parentID===41).map(n=>n.id)};
 const attachment={id:42,parentItemID:41,isAttachment:()=>true,isRegularItem:()=>false};
 let current=50;
 class Item {
- constructor(type){assert.equal(type,'note');this.id=++current;this.text='';this.saved=false;}
+ constructor(type){assert.equal(type,'note');this.id=++current;this.text='';this.tags=[];this.saved=false;}
+ isNote(){return true;}
+ addTag(tag){if(!this.tags.includes(tag))this.tags.push(tag);}
+ getTags(){return this.tags.map(tag=>({tag}));}
  setNote(x){this.text=x;}
  getNote(){return this.text;}
  async saveTx(){this.saved=true;data.set(this.id,this);}
  async eraseTx(){this.erased=true;data.delete(this.id);}
 }
+let backupCalls=0;
+const zipPrefs=new Map();
+let sectionConfig=null;
 const sandbox={
  Zotero:{
   Items:{get:id=>id===41?parent:id===42?attachment:data.get(id)},
@@ -23,9 +30,12 @@ const sandbox={
     assert.equal(noteId,current);
     const n=data.get(noteId);n.setNote('<div><h1>Research summary</h1><p>Evidence</p></div>');await n.saveTx();return n;
   }}}},
-  Attachments:{importFromFile:async({parentItemID})=>{assert.equal(parentItemID,41);return{id:99};}}
+  Attachments:{importFromFile:async({parentItemID})=>{assert.equal(parentItemID,41);backupCalls++;return{id:99};}},
+  ItemPaneManager:{registerSection:config=>{sectionConfig=config;return 'registered-section';},unregisterSection:()=>{}}
  },
- Services:{dirsvc:{get:()=>({path:'/tmp'})}},
+ Services:{dirsvc:{get:()=>({path:'/tmp'})},prefs:{
+  getBoolPref:(key,def)=>zipPrefs.get(key)??def,
+  setBoolPref:(key,val)=>zipPrefs.set(key,val)}},
  PathUtils:{join:(...pieces)=>pieces.join('/'),parent:p=>p.slice(0,p.lastIndexOf('/'))},
  Ci:{nsIFile:'nsIFile'},
  IOUtils:{exists:async()=>true,stat:async()=>({size:512}),readUTF8:async()=> '# Research summary\n\nOne paragraph',makeDirectory:async()=>{},remove:async()=>{}},
@@ -95,16 +105,63 @@ async function rejects(f,re){await assert.rejects(f,re);}
  assert.equal(imp.fileFromDrop({dataTransfer:{files:[{name:'a.zip',mozFullPath:'/tmp/a.zip'}]}}),'/tmp/a.zip');
  const saved=[];
  const win={alert:s=>saved.push(s)};
+ // Only a top-level reference item should show the Zotero import section.
+ imp.registerItemPane('resource://zcg/');
+ assert.equal(imp.sectionID,'registered-section');
+ let isEnabled=null;
+ sectionConfig.onItemChange({item:parent,setEnabled:x=>isEnabled=x});
+ assert.equal(isEnabled,true,'regular parent should show the import section');
+ sectionConfig.onItemChange({item:attachment,setEnabled:x=>isEnabled=x});
+ assert.equal(isEnabled,false,'PDF attachment must not show the import section');
+ sectionConfig.onItemChange({item:{isRegularItem:()=>false,isNote:()=>true},setEnabled:x=>isEnabled=x});
+ assert.equal(isEnabled,false,'child note must not show the import section');
+ sectionConfig.onItemChange({item:null,setEnabled:x=>isEnabled=x});
+ assert.equal(isEnabled,false,'no selected reference hides the import section');
+ // ZIP backup preference is OFF unless the user explicitly opts in.
+ assert.equal(imp.getKeepZIP(),false);
+ assert.equal(imp.getChildNotes(parent).length,0);
+ assert.equal(imp.getImportedNotes(parent).length,0);
+ const doc={createElementNS:(_ns,type)=>({
+   type,children:[],style:{},ownerDocument:doc,
+   replaceChildren(){this.children=[];},appendChild(child){this.children.push(child);},
+   addEventListener(){},set textContent(x){this.text=x;},get textContent(){return this.text;}
+ })};
+ const status={ownerDocument:doc,children:[],replaceChildren(){this.children=[];},appendChild(el){this.children.push(el);}};
+ imp.renderStatus(status,parent,win);
+ assert.match(status.children[0].textContent,/已有子笔记 0 篇 · ChatGPT 导入 0 篇/);
+
  // Verify plain Markdown path and parent binding / no replace-on-duplicate.
  const n=await imp.runImport(parent,'/archive/paper.md',win);
  assert.equal(n.parentID,41);
  assert(n.getNote().includes('Research summary'));
  assert(saved.some(x=>x.includes('已导入')));
  assert.equal(data.size,1);
+ assert.equal(imp.getImportedNotes(parent).length,1,'imported note retains provenance marker');
+ imp.renderStatus(status,parent,win);
+ assert.match(status.children[0].textContent,/已有子笔记 1 篇 · ChatGPT 导入 1 篇/);
+ assert.equal(status.children.length,2,'the import status offers an open-last-note link');
  const n2=await imp.runImport(parent,'/archive/paper.md',win);
  assert.notEqual(n.id,n2.id,'re-import should create a separate child note');
  sandbox.Zotero.BetterNotes=null;
  await rejects(()=>imp.runImport(parent,'/archive/paper.md',win),/Better Notes/);
  assert.equal(data.size,2,'no empty notes created when dependency missing');
+ sandbox.Zotero.BetterNotes={api:{$import:{fromMD:async(file,{noteId})=>{
+   const n=data.get(noteId);n.setNote('<div><h1>ZIP research summary</h1></div>');await n.saveTx();return n;
+ }}}};
+ // No redundant ZIP attached by default; explicit opt-in creates one.
+ imp.extractZIP=async()=>({mdPath:'/archive/paper.md',root:'/tmp/test-zcg',imageCount:2});
+ const n3=await imp.runImport(parent,'/tmp/research.zip',win);
+ assert.equal(backupCalls,0,'default ZIP import must not create an attachment');
+ assert.equal(n3.parentID,41);
+ imp.setKeepZIP(true);
+ assert.equal(imp.getKeepZIP(),true);
+ await imp.runImport(parent,'/tmp/research.zip',win);
+ assert.equal(backupCalls,1,'explicit ZIP backup opt-in must attach original');
+ assert.equal(imp.getImportedNotes(parent).length,4,'each imported child is individually marked');
+ imp.renderStatus(status,parent,win);
+ assert.match(status.children[0].textContent,/已有子笔记 4 篇 · ChatGPT 导入 4 篇/);
+ imp.unregisterItemPane();
+ assert.equal(imp.panelStates.size,0);
+
  console.log('PASS ZIP security validation, child-note binding, Better Notes API, duplicate-safe import, dependency failure');
 })().catch(e=>{console.error(e);process.exitCode=1;});
