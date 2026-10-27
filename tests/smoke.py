@@ -4,7 +4,7 @@ import json, re, tempfile, os
 ROOT=Path(__file__).resolve().parents[1]
 src=ROOT/'src'
 manifest=json.loads((src/'manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='0.4.0-beta.13'
+assert manifest['version']=='0.4.0-beta.14'
 win=(src/'windows_upload.ps1').read_text(encoding='utf-8')
 assert 'NO_AUTO_SEND' in win
 assert 'Select-ExactFile' in win
@@ -44,7 +44,14 @@ assert win.index('Write-FilenameUsingNativeFocus $Dialog $filename') < win.index
 assert 'function Log-PlusButtonState(' in win
 assert 'UPLOAD_PLUS_STATE enabled=' in win
 assert 'UPLOAD_FIRST_PROMPT_CLIPBOARD_READY' in win
-assert 'UPLOAD_PLUS_UNAVAILABLE_AFTER_RETRIES' in win
+assert 'MULTI_PLUS_TIMEOUT item=' in win
+assert 'function Wait-ComposerPlus(' in win
+assert 'MULTI_PLUS_READY item=' in win
+assert 'MULTI_UPLOAD_PLAN count=' in win
+assert 'MULTI_NEXT_WAIT after=' in win
+assert 'ATTACHMENTS_REQUIRE_VISUAL_VERIFICATION' in win
+assert 'Open-FileDialog $itemIndex $paths.Count' in win
+assert 'extension=' in win
 assert win.index('UPLOAD_FIRST_PROMPT_CLIPBOARD_READY') < win.index('FILE_START')
 assert win.index('FILE_START') < win.index('Place-Prompt $foreground.Element $prompt')
 assert 'function Log-ForegroundState(' in win
@@ -62,7 +69,7 @@ assert 'ControlType]::Document' in win
 assert 'PROMPT_PASTE_VERIFIED' in win
 assert win.index('for ($i=0; $i -lt $paths.Count; $i++)') < win.index('Place-Prompt $foreground.Element $prompt')
 assert 'SetForegroundWindow' in win
-assert 'WIN_SCRIPT_BUILD v0.4.0beta13 uia-20261027' in win
+assert 'WIN_SCRIPT_BUILD v0.4.0beta14 uia-20261027' in win
 assert 'prepareWindows(item)' in (src/'bridge.js').read_text(encoding='utf-8')
 assert manifest['applications']['zotero']['id']=='zotero-chatgpt-safari@local.bridge'
 assert manifest['applications']['zotero']['strict_max_version']=='10.0.*'
