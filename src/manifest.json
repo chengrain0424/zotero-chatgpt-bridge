@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero to ChatGPT Chat (macOS Safari / Windows Chromium)",
-  "version": "0.4.0-beta.11",
-  "description": "Windows Edge/Chrome experimental: verify native Win32 file name focus by HWND ancestry when UIA exposes Pane only; no auto-send.",
+  "version": "0.4.0-beta.12",
+  "description": "Windows Edge/Chrome experimental: verified address-bar navigation to Zotero attachment folder, native filename text verification; never auto-send.",
   "author": "ChatGPT-assisted community build",
   "applications": {
     "zotero": {
