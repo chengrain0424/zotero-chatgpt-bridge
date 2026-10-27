@@ -130,3 +130,7 @@ beta.15 实际日志显示：两份附件均完成原生文件选择（约 7.7MB
 ### Windows beta.20：修复启动前误报 Windows automation script missing
 
 已查明 beta.19 的 XPI 打包了正确的 `windows_source.js`，但 `bridge.js` 仍然写死了 beta.17 的标记，导致每次 Windows 启动在创建 `run-` 文件夹前就失败。beta.20 不再使用固定的旧版本标记来判断脚本是否存在，而是读取真实 PowerShell 脚本的版本信息并验证关键入口函数；真实辅助脚本、运行目录创建和日志保存均已纳入自动化回归测试。保留所有长 Prompt 与 PDF/SI 上传功能。请安装新版 XPI 并**完整退出后重启 Zotero**。
+
+### Windows / macOS beta.21：优化阅读笔记默认 Prompt 的公式图注、验证状态和长表格
+
+共享英文默认 Prompt（**35,986 字符**）新增：图注不能随意嵌套 Markdown 斜体与数学公式、表面吸附物种星号须防止被解释为加粗/斜体；计算应区分 **Arithmetic checked / Partial balance / Order-of-magnitude estimate / Not verifiable from available sources**；避免跨页冗长 Markdown 表格，仍使用正文穿插原图、三列表格导航。请注意，插件只负责将论文附件与 Prompt 送到 ChatGPT，**并不负责生成 Markdown 转 PDF 的页面排版**，无法直接修复另一个应用的 PDF 分页引擎。beta.20 的 Windows 启动修复、SI 连续上传、全文粘贴和 120,000 字符上限均保留。安装后可在 ⚙ 用「恢复默认」启用新版模板，已保存的 beta.20 原始默认会自动升级，自定义 Prompt 不覆盖。
