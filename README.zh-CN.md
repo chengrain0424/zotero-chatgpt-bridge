@@ -143,7 +143,7 @@ beta.15 实际日志显示：两份附件均完成原生文件选择（约 7.7MB
 
 ## v0.4.1 开发构建 — ChatGPT ZIP 导入为文献子笔记
 
-在 Zotero 选中目标文献后可右键选择 **「导入 ChatGPT ZIP / Markdown 阅读笔记」** 并选取 ChatGPT 下载的 ZIP，或在右侧文献详情的笔记导入区拖入单个 ZIP/MD 文件。插件识别 ZIP 内 Markdown 和 PNG/JPEG/GIF/WebP 图片，安全解压并调用 Better Notes 的 `Zotero.BetterNotes.api.$import.fromMD(path,{noteId,ignoreVersion:true})` 进行导入，创建属于当前文献的子笔记。**Better Notes 是必需依赖**，缺少时会报错，不创建空笔记。原始 ZIP 默认尝试以普通附件方式保存到同一文献，以便回溯。
+在 Zotero 选中目标文献后可右键选择 **「导入 ChatGPT ZIP / Markdown 阅读笔记」** 并选取 ChatGPT 下载的 ZIP，或在右侧文献详情的笔记导入区拖入单个 ZIP/MD 文件。插件识别 ZIP 内 Markdown 和 PNG/JPEG/GIF/WebP 图片，安全解压并调用 Better Notes 的 `Zotero.BetterNotes.api.$import.fromMD(path,{noteId,ignoreVersion:true})` 进行导入，创建属于当前文献的子笔记。**Better Notes 是必需依赖**，缺少时会报错，不创建空笔记。**原始 ZIP 默认不保存为附件**；需要时可在主文献条目的导入区勾选「同时保留原始 ZIP 附件」，设置会保留。插件只在文献主条目显示导入区，在 PDF、SI、笔记附件上隐藏；导入区显示该文献已有子笔记数量、已标记的 ChatGPT 导入笔记数量和打开最近导入笔记的入口。新版本成功导入的笔记添加 `ChatGPT Bridge Import` 标签以供统计；旧版本导入但未标记的笔记仍计入 Zotero 子笔记总数，不会被自动改动。
 
 为减少误操作：每次只导入一个 ZIP；ZIP 不能含路径穿越或异常条目；单个 ZIP 不能超过 80 MB，解压总量最多 120 MB，单个 MD 最多 8 MB，图片单张最多 24 MB；如果 ZIP 内存在多个不能唯一识别的 Markdown 文件，则要求先整理。重复导入创建新子笔记而不覆盖旧笔记。解压工作区暂留系统临时目录；请用 Zotero 的笔记实际检查配图和公式，并保留原始 ZIP 备份。直接向 Zotero **文献列表**拖文件仍是 Zotero 原生行为，插件只接管右侧的专用拖放区域。
 
