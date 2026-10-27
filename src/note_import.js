@@ -138,7 +138,14 @@ var ZCGNoteImporter = {
   },
   async pickFile(win) {
     const picker=Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
-    picker.init(win,"选择 ChatGPT 阅读笔记 ZIP 或 Markdown",Ci.nsIFilePicker.modeOpen);
+    // Firefox/Zotero's modern nsIFilePicker.init expects a BrowsingContext,
+    // not an nsIDOMWindow. Passing win directly raises NS_ERROR_XPC_BAD_CONVERT_JS.
+    // The item-pane document can be a nested window; prefer its own context,
+    // falling back to the top-level Zotero window.
+    const browsingContext=win?.browsingContext || Zotero.getMainWindow?.()?.browsingContext;
+    if(!browsingContext)
+      throw new Error("无法获取 Zotero 主窗口 BrowsingContext；请从 Zotero 文献列表右键打开导入。");
+    picker.init(browsingContext,"选择 ChatGPT 阅读笔记 ZIP 或 Markdown",Ci.nsIFilePicker.modeOpen);
     picker.appendFilter("ChatGPT 阅读笔记 (*.zip; *.md)","*.zip;*.md");
     picker.appendFilters(Ci.nsIFilePicker.filterAll);
     const result=await new Promise(resolve=>picker.open(resolve));
