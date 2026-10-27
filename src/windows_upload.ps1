@@ -6,7 +6,8 @@ param(
     [Parameter(Mandatory=$true)][ValidateSet('edge','chrome')][string]$Browser,
     [Parameter(Mandatory=$true)][string]$PromptPath,
     [Parameter(Mandatory=$true)][string]$UploadListPath,
-    [Parameter(Mandatory=$true)][string]$StatusPath
+    [Parameter(Mandatory=$true)][string]$StatusPath,
+    [switch]$SelfTestStaging
 )
 Set-StrictMode -Version 2
 $ErrorActionPreference = 'Stop'
@@ -814,6 +815,8 @@ try {
     if($paths.Count -lt 1 -or $paths.Count -gt 10) {
         throw '暂存文件数量与要求不一致；已停止上传。'
     }
+    # CI exercises actual Windows hardlink/copy staging without opening a browser.
+    if($SelfTestStaging) { Log 'STAGING_SELFTEST_PASS'; exit 0 }
     $prompt = [System.IO.File]::ReadAllText($PromptPath, [System.Text.Encoding]::UTF8)
     $script:PromptValue=$prompt
     if (-not $prompt.Trim()) { throw 'Prompt 为空，已停止。' }
