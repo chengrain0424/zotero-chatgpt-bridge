@@ -5,6 +5,7 @@
 - Recognise the previously saved beta.17 built-in English default as an upgradeable default; preserve genuinely edited/custom prompts.
 - Windows: verify **whole pasted prompt**, not just its first 30 characters; log expected/observed lengths without logging text. Keep Prompt on clipboard if automated verification fails, and never auto-send.
 - Preserve the user-validated multi-attachment PDF/Word upload flow on Windows, and existing macOS Safari automation.
+- The release bundle is checked for the full 29,126-character default Prompt and both platform scripts before the GitHub prerelease is published.
 
 ## v0.4.0-beta.17 — Shared English research note prompt (Windows + macOS)
 
