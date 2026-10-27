@@ -36,6 +36,37 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'../src/note_import.js'),'ut
 const imp=sandbox.IMPORTER;
 async function rejects(f,re){await assert.rejects(f,re);}
 (async()=>{
+ // Regression for the real Windows error:
+ // nsIFilePicker.init's first argument must be BrowsingContext, never Window.
+ const browserContext={contextToken:'zotero-main'};
+ let observedContext=null;
+ let pickerResult=0;
+ const fakePicker={
+   init:(context,title,mode)=>{
+     if(context!==browserContext) throw new TypeError('Could not convert JavaScript argument arg 0 [nsIFilePicker.init]');
+     observedContext=context;
+     assert.equal(mode,0);
+     assert(title.includes('ChatGPT'));
+   },
+   appendFilter:()=>{},
+   appendFilters:()=>{},
+   get file(){return {path:'/tmp/research.zip'};},
+   open:callback=>callback(pickerResult),
+ };
+ sandbox.Ci.nsIFilePicker={modeOpen:0,returnOK:0,returnCancel:1,filterAll:1};
+ sandbox.Cc['@mozilla.org/filepicker;1']={createInstance:()=>fakePicker};
+ const pickerWindow={browsingContext:browserContext};
+ assert.equal(await imp.pickFile(pickerWindow),'/tmp/research.zip');
+ assert.strictEqual(observedContext,browserContext);
+ pickerResult=1;
+ assert.equal(await imp.pickFile(pickerWindow),null,'cancelling the picker must not import');
+ pickerResult=0;
+ sandbox.Zotero.getMainWindow=()=>({browsingContext:browserContext});
+ assert.equal(await imp.pickFile({}),'/tmp/research.zip','nested pane can use main browsingContext');
+ sandbox.Zotero.getMainWindow=()=>({browsingContext:null});
+ await rejects(()=>imp.pickFile({}),/BrowsingContext/);
+ sandbox.Zotero.getMainWindow=()=>({browsingContext:browserContext});
+ console.log('PASS Windows native picker uses BrowsingContext, handles cancel and nested pane');
  assert.equal(imp.getParent(parent).id,41);
  assert.equal(imp.getParent(attachment).id,41);
  assert.throws(()=>imp.getParent({isNote:()=>true}),/请选择/);
