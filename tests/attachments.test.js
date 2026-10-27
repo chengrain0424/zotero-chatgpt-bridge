@@ -66,5 +66,41 @@ const bridge=sandbox.TEST_BRIDGE;
   assert.deepEqual(Array.from(onlySI.ordered.map(f=>f.id)),[11,14,15,18]);
   assert(onlySI.ignored.some(s=>s.includes('random_001.docx')));
   assert(onlySI.ignored.some(s=>s.includes('experiment.xlsx')));
+  // One shared template powers Windows/Edge and macOS/Safari.
+  const required = [
+    'You are a rigorous academic research assistant',
+    '[Authors of This Paper]', '[Cited Studies]', '[AI Analysis]',
+    '[My Reflections — To Be Completed]',
+    '## 0. At-a-Glance Summary',
+    '## 3. Key Findings and Quantitative Evidence',
+    '## 7. Key Figures, Tables, and SI Navigation',
+    '## 8. My Reflections — To Be Completed',
+    '## 9. Reading Summary and Retrieval Information',
+    'Australian/British English spelling',
+    'Where file creation is supported',
+    'Do not invent primary-source evidence',
+    '{{title}}', '{{doi}}', '{{date}}', '{{files}}', '{{missing}}'
+  ];
+  for (const term of required) assert(bridge.defaultTemplate.includes(term), 'Missing English prompt: '+term);
+  assert(bridge.defaultTemplate.length > 9000 && bridge.defaultTemplate.length <= 20000);
+  assert(!bridge.defaultTemplate.includes('请用中文'));
+  const expanded = bridge.renderPrompt({
+    title: 'An Academic Study',doi:'',date:'',missing:['Supplement not on disk'],ignored:[]
+  },[{role:'MAIN',displayName:'actual-paper.pdf'}]);
+  assert(expanded.includes('Title: An Academic Study'));
+  assert(expanded.includes('DOI: Not recorded'));
+  assert(expanded.includes('Date: Not recorded'));
+  assert(expanded.includes('Expected attachments: MAIN: actual-paper.pdf'));
+  assert(expanded.includes('Missing or skipped attachments: Supplement not on disk'));
+  assert(!expanded.includes('{{title}}'));
+  assert(!expanded.includes('{{missing}}'));
+  assert(!expanded.includes('：未记录'));
+  prefs.set(bridge.promptPref, bridge.legacyDefaultTemplate);
+  assert.equal(bridge.getTemplate(), bridge.defaultTemplate, 'Stored old default should migrate');
+  prefs.set(bridge.promptPref, 'Custom text; preserve personal preferences');
+  assert.equal(bridge.getTemplate(),'Custom text; preserve personal preferences');
+  prefs.delete(bridge.promptPref);
+  assert.equal(bridge.getTemplate(),bridge.defaultTemplate);
+  console.log('PASS: shared English Markdown default, metadata substitutions, legacy default migration, custom prompt preserved');
   console.log('PASS: all-supported mode includes arbitrary DOCX/XLSX; SI-only filters; other-parent excluded; missing tracked');
 })().catch(err=>{console.error(err);process.exitCode=1;});
