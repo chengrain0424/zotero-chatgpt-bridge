@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta14 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta15 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -204,14 +204,22 @@ function Find-UIA([System.Windows.Automation.AutomationElement]$Root,
     return $null
 }
 
-function Test-UIATarget([System.Windows.Automation.AutomationElement]$Expected, [System.Windows.Automation.AutomationElement]$AtPoint) {
-    # Prevent an accidental click on an overlay or another control after layout changes.
-    $node = $AtPoint
-    for ($depth=0; $depth -lt 8 -and $null -ne $node; $depth++) {
-        try {
-            if ($node.Equals($Expected)) { return $true }
-            $node = [System.Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($node)
-        } catch { return $false }
+function Test-UIATarget([System.Windows.Automation.AutomationElement]$Expected,
+                        [System.Windows.Automation.AutomationElement]$AtPoint) {
+    if($null -eq $Expected -or $null -eq $AtPoint) { return $false }
+    # Chromium's DOM can expose child icons only in RawView, not ControlView.
+    # Either walker must lead from the hit-tested point to the exact control.
+    foreach($walker in @([System.Windows.Automation.TreeWalker]::ControlViewWalker,
+                         [System.Windows.Automation.TreeWalker]::RawViewWalker)) {
+        $node=$AtPoint
+        for($depth=0; $depth -lt 16 -and $null -ne $node; $depth++) {
+            try {
+                if($node.Equals($Expected)) { return $true }
+                $parent=$walker.GetParent($node)
+                if($null -ne $parent -and $parent.Equals($node)) { break }
+                $node=$parent
+            } catch { break }
+        }
     }
     return $false
 }
@@ -255,38 +263,58 @@ function Invoke-UIA([System.Windows.Automation.AutomationElement]$Element) {
 
 
 function Click-UIA-Verified([System.Windows.Automation.AutomationElement]$Element) {
-    # Guard the target with a UI Automation hit test immediately before click.
+    # Attachment chips can shift the composer and cover its + button's centre
+    # during an animation. Check multiple INTERNAL points. A physical click is
+    # permitted only where UIA confirms this exact element/its descendant.
     try {
-        $r = $Element.Current.BoundingRectangle
-        if ($r.Width -lt 8 -or $r.Height -lt 8) { return $false }
-        $x = [int]($r.Left + $r.Width/2)
-        $y = [int]($r.Top + $r.Height/2)
-        $hit = [System.Windows.Automation.AutomationElement]::FromPoint(
-            [System.Windows.Point]::new($x,$y))
-        if (-not (Test-UIATarget $Element $hit)) {
-            Log 'UIA_MOUSE_TARGET_MISMATCH stopped'
+        if($null -eq $Element -or -not $Element.Current.IsEnabled -or
+           $Element.Current.IsOffscreen) { return $false }
+        $r=$Element.Current.BoundingRectangle
+        if($r.Width -lt 8 -or $r.Height -lt 8) { return $false }
+        $offsets=@(@(0.5,0.5),@(0.3,0.5),@(0.7,0.5),
+                   @(0.5,0.3),@(0.5,0.7),@(0.3,0.3),@(0.7,0.3),
+                   @(0.3,0.7),@(0.7,0.7))
+        $hitPoint=$null
+        $sample=0
+        foreach($fraction in $offsets) {
+            $x=[int]($r.Left + $r.Width*$fraction[0])
+            $y=[int]($r.Top + $r.Height*$fraction[1])
+            try {
+                $hit=[System.Windows.Automation.AutomationElement]::FromPoint(
+                    [System.Windows.Point]::new($x,$y))
+                if(Test-UIATarget $Element $hit) {
+                    $hitPoint=[pscustomobject]@{X=$x;Y=$y}
+                    break
+                }
+            } catch {}
+            $sample++
+        }
+        if($null -eq $hitPoint) {
+            Log 'UIA_MOUSE_TARGET_MISMATCH no-verified-point'
             return $false
         }
-        $previous = New-Object ZcgWin32+POINT
-        $hasPrevious = [ZcgWin32]::GetCursorPos([ref]$previous)
+        $previous=New-Object ZcgWin32+POINT
+        $hasPrevious=[ZcgWin32]::GetCursorPos([ref]$previous)
         try {
-            [void][ZcgWin32]::SetCursorPos($x,$y)
-            Start-Sleep -Milliseconds 80
-            $hitAgain = [System.Windows.Automation.AutomationElement]::FromPoint(
-                [System.Windows.Point]::new($x,$y))
-            if (-not (Test-UIATarget $Element $hitAgain)) {
+            [void][ZcgWin32]::SetCursorPos($hitPoint.X,$hitPoint.Y)
+            Start-Sleep -Milliseconds 110
+            $hitAgain=[System.Windows.Automation.AutomationElement]::FromPoint(
+                [System.Windows.Point]::new($hitPoint.X,$hitPoint.Y))
+            if(-not (Test-UIATarget $Element $hitAgain)) {
                 Log 'UIA_MOUSE_TARGET_CHANGED stopped'
                 return $false
             }
             [ZcgWin32]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero)
             [ZcgWin32]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)
-            Log 'UIA_ACTIVATED via=VerifiedMouseClick'
+            Log ('UIA_ACTIVATED via=VerifiedMouseClick sample=' + $sample)
             return $true
         } finally {
-            if ($hasPrevious) { [void][ZcgWin32]::SetCursorPos($previous.X,$previous.Y) }
+            if($hasPrevious) {
+                [void][ZcgWin32]::SetCursorPos($previous.X,$previous.Y)
+            }
         }
     } catch {
-        Log ('UIA_MOUSE_UNAVAILABLE ' + $_.Exception.Message)
+        Log ('UIA_MOUSE_UNAVAILABLE ' + $_.Exception.GetType().Name)
     }
     return $false
 }
@@ -476,15 +504,30 @@ function Open-FileDialog([int]$ItemIndex,[int]$Total) {
     $types=@([System.Windows.Automation.ControlType]::Button,
              [System.Windows.Automation.ControlType]::MenuItem)
     $uploadLabels='(?i)(Upload files|Upload from computer|Add photos.{0,8}files|从电脑上传|上传文件|添加照片和文件)'
-    $ready=Wait-ComposerPlus $ItemIndex $Total
-    if($null -eq $ready) {
-        Log-UploadCandidates ([System.Windows.Automation.AutomationElement]::FromHandle($script:ChatWindowHandle))
-        return $null
+    # Do NOT InvokePattern a second time; actual Edge works with trusted
+    # physical clicks. After an attachment chip changes the layout, requery
+    # the plus button and retry only if NO physical click was dispatched.
+    $clicked=$false
+    for($clickAttempt=1; $clickAttempt -le 12; $clickAttempt++) {
+        $ready=Wait-ComposerPlus $ItemIndex $Total
+        if($null -eq $ready) {
+            Log ('UPLOAD_PLUS_NOT_READY item=' + $ItemIndex)
+            return $null
+        }
+        $plus=$ready.Button
+        Log ('UPLOAD_PLUS_FOUND item=' + $ItemIndex +
+             ' attempt=' + $clickAttempt + ' name=' + [string]$plus.Current.Name)
+        if(Click-UIA-Verified $plus) {
+            $clicked=$true
+            break
+        }
+        Log ('UPLOAD_PLUS_HIT_RETRY item=' + $ItemIndex +
+             ' attempt=' + $clickAttempt)
+        Start-Sleep -Milliseconds 550
     }
-    $plus=$ready.Button
-    Log ('UPLOAD_PLUS_FOUND item=' + $ItemIndex + ' name=' + [string]$plus.Current.Name)
-    if(-not (Invoke-UIA $plus)) {
-        Log ('UPLOAD_PLUS_INVOKE_FAILED item=' + $ItemIndex)
+    if(-not $clicked) {
+        Log ('UPLOAD_PLUS_HIT_TIMEOUT item=' + $ItemIndex)
+        Log-UploadCandidates ([System.Windows.Automation.AutomationElement]::FromHandle($script:ChatWindowHandle))
         return $null
     }
     Log ('UPLOAD_PLUS_CLICKED item=' + $ItemIndex)
@@ -792,53 +835,82 @@ function Read-EditorText([System.Windows.Automation.AutomationElement]$Editor) {
 }
 
 function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [string]$Prompt) {
-    # Clipboard fallback ALWAYS works without UI Automation.
+    # Always retain Prompt for manual Ctrl+V if ChatGPT's editor is unavailable.
     [System.Windows.Forms.Clipboard]::SetText($Prompt)
-    $pattern = '(?i)(Ask anything|Message ChatGPT|Ask ChatGPT|向 ChatGPT 提问|询问 ChatGPT|发送消息给 ChatGPT|问任何问题|prompt-textarea|composer-input|message input|Write a message|Ask a question)'
-    $editor = $null
-    for ($attempt=0; $attempt -lt 8; $attempt++) {
-        # Chromium may expose a contenteditable composer as Document instead of Edit.
-        $editor = Find-UIA $Window @([System.Windows.Automation.ControlType]::Edit,
-          [System.Windows.Automation.ControlType]::Document) $pattern
-        if ($null -ne $editor) { break }
-        Start-Sleep -Milliseconds 500
+    $pattern='(?i)(Ask anything|Message ChatGPT|Ask ChatGPT|向 ChatGPT 提问|询问 ChatGPT|发送消息给 ChatGPT|问任何问题|prompt-textarea|composer-input|pending-home-input|message input|Write a message|Ask a question)'
+    $editor=$null
+    for($attempt=0; $attempt -lt 12; $attempt++) {
+        try {
+            $current=[System.Windows.Automation.AutomationElement]::FromHandle(
+                $script:ChatWindowHandle)
+            $editor=Find-UIA $current @([System.Windows.Automation.ControlType]::Edit,
+                [System.Windows.Automation.ControlType]::Document) $pattern
+            if($null -ne $editor) { break }
+        } catch {}
+        Start-Sleep -Milliseconds 400
     }
-    if ($null -eq $editor) {
-        Log 'PROMPT_CLIPBOARD_READY composer not identified in Edit/Document controls; Ctrl+V manually'
+    if($null -eq $editor) {
+        Log 'PROMPT_CLIPBOARD_READY composer not identified; Ctrl+V manually'
         return
     }
     try {
-        $editor.SetFocus()
-        $focused = [System.Windows.Automation.AutomationElement]::FocusedElement
-        if ($null -eq $focused -or -not $focused.Equals($editor)) {
+        $existing=Read-EditorText $editor
+        if($null -eq $existing) {
+            Log 'PROMPT_CLIPBOARD_READY editor text unreadable; not typing'
+            return
+        }
+        if(-not [string]::IsNullOrWhiteSpace($existing)) {
+            if($existing.Contains($Prompt.Substring(0,[Math]::Min(30,$Prompt.Length)))) {
+                Log 'PROMPT_ALREADY_PRESENT not duplicating'
+            } else {
+                Log 'PROMPT_CLIPBOARD_READY editor not empty; not overwriting'
+            }
+            return
+        }
+        try {
+            $editor.SetFocus()
+            Start-Sleep -Milliseconds 120
+        } catch { Log 'PROMPT_SETFOCUS_UNAVAILABLE' }
+        $focused=[System.Windows.Automation.AutomationElement]::FocusedElement
+        $focusOK=Test-UIATarget $editor $focused
+        if(-not $focusOK) {
+            Log 'PROMPT_MOUSE_FOCUS_ATTEMPT'
+            # This editor is named and empty. Hit-test before clicking to
+            # avoid sending a long prompt to a PDF chip or another field.
+            if(Click-UIA-Verified $editor) {
+                Start-Sleep -Milliseconds 200
+                $focused=[System.Windows.Automation.AutomationElement]::FocusedElement
+                $focusOK=Test-UIATarget $editor $focused
+            }
+        }
+        if(-not $focusOK) {
             Log 'PROMPT_CLIPBOARD_READY composer focus unverified'
             return
         }
-        $oldText = Read-EditorText $editor
-        if ($null -eq $oldText) {
-            # Uninspectable composer: don't risk overwriting another draft.
-            Log 'PROMPT_CLIPBOARD_READY editor text unreadable; paste manually'
-            return
-        }
-        if (-not [string]::IsNullOrWhiteSpace($oldText)) {
-            Log 'PROMPT_CLIPBOARD_READY editor not empty; not overwriting'
+        Log 'PROMPT_FOCUS_VERIFIED'
+        # Verify the editor is still empty before inserting. Never replace a
+        # user's existing draft or automatically press Send.
+        $before=Read-EditorText $editor
+        if($null -eq $before -or -not [string]::IsNullOrWhiteSpace($before)) {
+            Log 'PROMPT_CLIPBOARD_READY editor changed before paste'
             return
         }
         [System.Windows.Forms.SendKeys]::SendWait('^v')
-        Start-Sleep -Milliseconds 600
-        $readback = Read-EditorText $editor
-        if ($null -ne $readback -and $readback.Contains($Prompt.Substring(0,[Math]::Min($Prompt.Length,30)))) {
+        Start-Sleep -Milliseconds 650
+        $readback=Read-EditorText $editor
+        if($null -ne $readback -and
+           $readback.Contains($Prompt.Substring(0,[Math]::Min($Prompt.Length,30)))) {
             Log 'PROMPT_PASTE_VERIFIED (first 30 chars)'
         } else {
-            Log 'PROMPT_PASTE_UNVERIFIED check ChatGPT composer and paste Ctrl+V manually'
+            Log 'PROMPT_PASTE_UNVERIFIED check composer; Ctrl+V manually'
         }
     } catch {
-        Log ('PROMPT_CLIPBOARD_READY paste skipped: ' + $_.Exception.Message)
+        Log ('PROMPT_CLIPBOARD_READY paste skipped: '+$_.Exception.GetType().Name)
     }
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta14 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta15 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
