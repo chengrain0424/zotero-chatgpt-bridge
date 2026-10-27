@@ -4,13 +4,21 @@ import json, re, tempfile, os
 ROOT=Path(__file__).resolve().parents[1]
 src=ROOT/'src'
 manifest=json.loads((src/'manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='0.4.0-beta.12'
+assert manifest['version']=='0.4.0-beta.13'
 win=(src/'windows_upload.ps1').read_text(encoding='utf-8')
 assert 'NO_AUTO_SEND' in win
 assert 'Select-ExactFile' in win
 assert '--force-renderer-accessibility' in win
 assert 'Log-UploadCandidates' in win
 assert 'function Log-UploadCandidates(' in win
+assert 'function Prepare-UploadStaging(' in win
+assert 'CreateHardLink(' in win
+assert 'STAGED_SINGLE_FILE' in win
+assert 'STAGING_SELFTEST_PASS' in win
+assert 'picker_staging' in win
+assert "if($filename.StartsWith('.') -or $allowed -notcontains $ext)" in win
+assert "if($i -eq 0 -and $ext -ne '.pdf')" in win
+assert 'FILENAME_ENTER_SUBMITTED' in win
 assert 'function Get-VerifiedDialogFocus(' in win
 assert 'function Get-AddressBarFocus(' in win
 assert 'function Focus-AddressBar(' in win
@@ -32,7 +40,7 @@ assert 'FILENAME_NATIVE_READBACK_VERIFIED' not in win
 assert 'FILENAME_KEYBOARD_READBACK_VERIFIED' not in win
 assert "SendWait('^c')" not in win
 assert win.index('Navigate-ToExactFolder $Dialog $directory') < win.index('Write-FilenameUsingNativeFocus $Dialog $filename')
-assert win.index('Write-FilenameUsingNativeFocus $Dialog $filename') < win.index("Log 'FILENAME_OPEN_CLICKED'")
+assert win.index('Write-FilenameUsingNativeFocus $Dialog $filename') < win.index("Log 'FILENAME_ENTER_SUBMITTED'")
 assert 'function Log-PlusButtonState(' in win
 assert 'UPLOAD_PLUS_STATE enabled=' in win
 assert 'UPLOAD_FIRST_PROMPT_CLIPBOARD_READY' in win
@@ -54,7 +62,7 @@ assert 'ControlType]::Document' in win
 assert 'PROMPT_PASTE_VERIFIED' in win
 assert win.index('for ($i=0; $i -lt $paths.Count; $i++)') < win.index('Place-Prompt $foreground.Element $prompt')
 assert 'SetForegroundWindow' in win
-assert 'WIN_SCRIPT_BUILD v0.4.0beta12 uia-20261027' in win
+assert 'WIN_SCRIPT_BUILD v0.4.0beta13 uia-20261027' in win
 assert 'prepareWindows(item)' in (src/'bridge.js').read_text(encoding='utf-8')
 assert manifest['applications']['zotero']['id']=='zotero-chatgpt-safari@local.bridge'
 assert manifest['applications']['zotero']['strict_max_version']=='10.0.*'
