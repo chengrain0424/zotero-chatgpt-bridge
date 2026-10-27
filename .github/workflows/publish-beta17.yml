@@ -1,0 +1,74 @@
+name: Publish tested unified Zotero beta.17
+
+on:
+  push:
+    branches:
+      - feature/windows-edge-chrome
+
+jobs:
+  publish-beta17:
+    if: contains(github.event.head_commit.message, '[publish-beta17]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify unified Zotero code and default Prompt
+        run: |
+          node --check src/bridge.js
+          node --test tests/attachments.test.js
+          python3 tests/smoke.py
+      - name: Build XPI with both macOS Safari and Windows Chromium scripts
+        run: |
+          python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
+          python3 - <<'PY'
+          import json, zipfile
+          from pathlib import Path
+          version=json.loads(Path('src/manifest.json').read_text())['version']
+          assert version == '0.4.0-beta.17', version
+          xpi=Path(f'dist/Zotero_to_ChatGPT_Direct_v{version}_Zotero10.xpi')
+          assert xpi.is_file()
+          with zipfile.ZipFile(xpi) as z:
+              assert z.testzip() is None
+              assert all(name in z.namelist() for name in ('bridge.js','safari_source.js','windows_source.js'))
+              prompt=z.read('bridge.js').decode('utf-8')
+              assert 'You are a rigorous academic research assistant' in prompt
+              assert '## 8. My Reflections — To Be Completed' in prompt
+          PY
+      - name: Publish GitHub prerelease with XPI and checksum
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="v0.4.0-beta.17"
+          asset="dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.17_Zotero10.xpi"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists: $tag"
+            exit 0
+          fi
+          cat > /tmp/zotero-release-notes.md <<'NOTES'
+          # Windows Edge / Chrome + macOS Safari beta
+
+          Zotero 10 users can now use the same package on Windows and macOS. The default prompt has been replaced with the full English-language structured critical-reading request, suitable for Zotero/Better Notes (sections 0–9).
+
+          - Requires distinction of **[Authors of This Paper]**, **[Cited Studies]**, **[AI Analysis]**, and deliberately unanswered **[My Reflections — To Be Completed]**.
+          - Covers publication type, scientific methods, quantitative results, mechanism strength, SI evidence, figures, practical relevance, limitations and retrieval keywords.
+          - Preserves Zotero template fields `{{title}}`, `{{doi}}`, `{{date}}`, `{{files}}`, and `{{missing}}`; unknown metadata falls back to English.
+          - Existing genuinely customised prompts are preserved; a saved exact copy of the old Chinese default automatically uses the new English default.
+          - Retains sequential PDF/Word SI attachment upload and safe Prompt paste on Windows, plus the existing Safari workflow. **No auto-send.**
+          - The Windows PDF/DOCX multi-upload and Prompt paste workflow has been user-tested; this combined package should still be checked after upgrade. The macOS Safari automation code is unchanged.
+
+          ## Install
+
+          Download the attached `.xpi` and install it in Zotero 10. Restart Zotero. In the toolbar's Prompt settings, use **Restore default** to switch from any custom prompt to the new English version.
+
+          This is a prerelease; inspect the ChatGPT attachment chips before sending.
+          NOTES
+          gh release create "$tag" "$asset" dist/SHA256SUMS \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Zotero ChatGPT Bridge v0.4.0-beta.17 (Windows + macOS)" \
+            --notes-file /tmp/zotero-release-notes.md
+          gh release view "$tag" --json url,assets
