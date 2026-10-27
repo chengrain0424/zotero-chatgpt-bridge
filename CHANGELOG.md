@@ -1,6 +1,6 @@
 ## v0.4.0-beta.19 — Fix prompt input clipping; add material/energy balances and MathJax requirements
 
-- New shared built-in Prompt (**33,608 characters**) extends the beta.18 note with rigorous preliminary elemental/material and power/energy balance checks, balance-completeness labels, and Obsidian-compatible MathJax delimiters.
+- New shared built-in Prompt (**33,105 characters**) extends the beta.18 note with rigorous preliminary elemental/material and power/energy balance checks, balance-completeness labels, and Obsidian-compatible MathJax delimiters.
 - Increase the plugin-side Prompt limit **50,000 → 120,000 characters**. Remove native HTML maxlength from both editors to eliminate *silent* clipboard clipping. Intercept PDF-reader editor paste atomically, count characters before insertion and reject over-limit content visibly instead of truncating it.
 - Show live editor length and verify the **entire saved preference** equals what the user entered before closing the editor. Preserve genuine customised prompts; automatically migrate the exact built-in beta.18 default.
 - Keep Windows PDF/Word SI upload, full-prompt clipboard verification and macOS Safari automation unchanged. No auto-send.
