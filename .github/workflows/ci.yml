@@ -21,7 +21,7 @@ jobs:
       - name: Test build package
         run: |
           python3 scripts/build_release.py --owner dummy-owner --repo dummy-repo
-          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.15*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
+          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.16*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
           python3 -m json.tool dist/updates.json > /dev/null
 
       - name: Build experimental Windows installer
@@ -32,7 +32,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Zotero-Windows-Experimental-XPI
-          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.15_Zotero10.xpi
+          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.16_Zotero10.xpi
           if-no-files-found: error
           retention-days: 30
 
@@ -58,7 +58,7 @@ jobs:
           $ast = [System.Management.Automation.Language.Parser]::ParseFile('src/windows_upload.ps1', [ref]$tokens, [ref]$errors)
           if ($errors.Count) { throw 'Helper parser errors' }
           $functions = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object Name)
-          foreach ($name in @('Prepare-UploadStaging','Wait-ComposerPlus','Open-FileDialog','Log-UploadCandidates','Get-VerifiedDialogFocus','Get-AddressBarFocus','Focus-AddressBar','Navigate-ToExactFolder','Read-NativeEditText','Test-NativePathEqual','Get-NativeFileNameFocus','Write-FilenameUsingNativeFocus','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Place-Prompt','Open-FileDialog')) {
+          foreach ($name in @('Prepare-UploadStaging','Wait-ComposerPlus','Open-FileDialog','Log-UploadCandidates','Get-VerifiedDialogFocus','Get-AddressBarFocus','Focus-AddressBar','Navigate-ToExactFolder','Read-NativeEditText','Test-NativePathEqual','Get-NativeFileNameFocus','Write-FilenameUsingNativeFocus','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Find-ChatComposer','Test-ComposerHasOnlyAttachments','Place-Prompt','Open-FileDialog')) {
             if ($functions -notcontains $name) { throw "Missing helper function: $name" }
           }
       - name: Exercise native WM_GETTEXT on a Windows Edit HWND
@@ -152,6 +152,21 @@ jobs:
           $isolated = @(Get-ChildItem -LiteralPath (Join-Path $task 'picker_staging') -Directory)
           if ($isolated.Count -ne 3) { throw 'Wrong number of independent picker directories' }
           Write-Host 'PASS main PDF + SI PDF + SI DOCX, separate single-file picker directories'
+      - name: Check prompt classifier does not confuse attachment chips with drafts
+        shell: powershell
+        run: |
+          $source = [IO.File]::ReadAllText((Resolve-Path 'src/windows_upload.ps1'))
+          $start = $source.IndexOf('function Test-ComposerHasOnlyAttachments(')
+          $end = $source.IndexOf('function Place-Prompt(', $start)
+          if ($start -lt 0 -or $end -le $start) { throw 'Prompt classifier not found' }
+          . ([scriptblock]::Create($source.Substring($start, $end-$start)))
+          $files = [string[]]@('C:\Zotero\正文论文.pdf','C:\Zotero\SI experiment.docx')
+          if (-not (Test-ComposerHasOnlyAttachments '' $files)) { throw 'Empty input should be safe' }
+          if (-not (Test-ComposerHasOnlyAttachments 'Ask ChatGPT' $files)) { throw 'Placeholder should be safe' }
+          if (-not (Test-ComposerHasOnlyAttachments '正文论文.pdf; SI experiment.docx' $files)) { throw 'Attachment chips not identified' }
+          if (Test-ComposerHasOnlyAttachments 'A real user draft' $files) { throw 'Draft would be overwritten' }
+          if (Test-ComposerHasOnlyAttachments '正文论文.pdf and a user draft' $files) { throw 'Mixed attachment/draft wrongly accepted' }
+          Write-Host 'PASS composer text classifier: chip labels allowed, drafts protected'
       - name: Run helper startup smoke without opening a browser
         shell: powershell
         run: |
