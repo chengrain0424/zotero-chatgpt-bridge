@@ -173,23 +173,53 @@ var ZCGBridge = {
       browserRow.appendChild(select);panel.appendChild(browserRow);
     }
     const area=doc.createElement("textarea");
-    area.value=this.getTemplate();area.spellcheck=false;area.maxLength=this.promptMaxLength;
+    area.value=this.getTemplate();area.spellcheck=false;
+    // HTML maxlength may silently clip clipboard pastes before our code sees the content.
+    // setTemplate validates before saving; the editor itself must never truncate.
+    area.removeAttribute("maxlength");
     area.style.cssText="width:100%;height:300px;box-sizing:border-box;resize:vertical;border:1px solid #888;border-radius:5px;padding:10px;background:var(--material-background,#fff);color:inherit;line-height:1.5;font-size:12px;";
     panel.appendChild(area);
     const counter=doc.createElement("div");
     counter.style.cssText="font-size:11px;opacity:.8;text-align:right;font-variant-numeric:tabular-nums;";
     const updateCounter=()=>{
-      counter.textContent=area.value.length.toLocaleString()+" / "+this.promptMaxLength.toLocaleString()+" characters";
-      counter.style.color=area.value.length>this.promptMaxLength?"#c00":"inherit";
+      const n=area.value.length;
+      counter.textContent=n.toLocaleString()+" / "+this.promptMaxLength.toLocaleString()+
+        " characters"+(n>this.promptMaxLength?" — OVER LIMIT":"");
+      counter.style.color=n>this.promptMaxLength?"#c00":"inherit";
     };
     area.addEventListener("input",updateCounter);
+    area.addEventListener("paste",e=>{
+      // Handle the entire source string, before native edit clipping can occur.
+      const pasted=e.clipboardData?.getData("text/plain");
+      if(typeof pasted!=="string" || !pasted.length) return;
+      const projected=area.value.length-(area.selectionEnd-area.selectionStart)+pasted.length;
+      e.preventDefault();
+      if(projected>this.promptMaxLength) {
+        note.textContent="粘贴内容 "+pasted.length.toLocaleString()+
+          " 字符，预计总长度 "+projected.toLocaleString()+
+          " 超过 "+this.promptMaxLength.toLocaleString()+
+          "：未粘贴、未截断。";
+        return;
+      }
+      area.setRangeText(pasted,area.selectionStart,area.selectionEnd,"end");
+      area.dispatchEvent(new doc.defaultView.Event("input",{bubbles:true}));
+      note.textContent="已完整接收剪贴板文本 "+pasted.length.toLocaleString()+" 字符。";
+    });
     updateCounter();
     panel.appendChild(counter);
     const controls=doc.createElement("div");controls.style.cssText="display:flex;gap:8px;justify-content:flex-end;";
     const make=(label,callback)=>{const btn=doc.createElement("button");btn.type="button";btn.textContent=label;btn.style.cssText="cursor:pointer;padding:5px 10px;border-radius:5px;border:1px solid #aaa;background:transparent;color:inherit;";btn.addEventListener("click",callback);controls.appendChild(btn);};
     make("恢复默认",()=>{area.value=this.defaultTemplate;updateCounter();area.focus();});
     make("取消",()=>panel.remove());
-    make("保存",()=>{try{this.setTemplate(area.value);this.setAttachmentMode(includeAll.checked ? "all" : "si");panel.remove();}catch(e){note.textContent=e.message;}});
+    make("保存",()=>{try{
+      this.setTemplate(area.value);
+      const stored=Services.prefs.getStringPref(this.promptPref,"");
+      if(stored!==String(area.value || "").trim()) {
+        throw new Error("保存后全文校验失败：内容与编辑框不一致。");
+      }
+      this.setAttachmentMode(includeAll.checked ? "all" : "si");
+      panel.remove();
+    }catch(e){note.textContent=e.message;}});
     panel.appendChild(controls);
     (doc.body || doc.documentElement).appendChild(panel);
     area.focus();
