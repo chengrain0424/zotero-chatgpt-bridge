@@ -110,3 +110,7 @@ beta.11 虽然记录 `FILENAME_NATIVE_READBACK_VERIFIED`，但用户实机截图
 ### Windows beta.15：第二份 SI 上传与 Prompt 焦点修复
 
 beta.14 实机日志证实正文 PDF 完成文件选择，第二份 DOCX 的 `Add files and more` 已识别但在 `UIA_MOUSE_TARGET_MISMATCH` 中止；随后因为输入框焦点无法确认，Prompt 仍留在剪贴板。beta.15 保留逐份独立暂存目录与原生文件对话框输入路径流程。新增：附件加号的多个内部点击位置命中检测；每次验证失败重新读取最新浏览器无障碍元素并重试（只会在验证通过后进行**一次**物理点击，不会盲目反复切换“+”）；加入 Chromium RawView 树验证 SVG 图标与按钮的子元素关系；Prompt 先检查已存在内容，自动焦点不可用时仅对确认为 ChatGPT 空编辑框的区域尝试经过命中验证的物理鼠标聚焦，然后再粘贴，绝不覆盖已有草稿、不自动发送。日志可查看 `UPLOAD_PLUS_HIT_RETRY`、`UPLOAD_MENU_PHYSICAL_CLICK item=2`、`FILE_PICKER_CLOSED 2/2`、`PROMPT_FOCUS_VERIFIED`、`PROMPT_PASTE_VERIFIED`。自动化测试不是实际浏览器验证。
+
+### Windows beta.16：连续上传成功后 Prompt 未自动粘贴
+
+beta.15 实际日志显示：两份附件均完成原生文件选择（约 7.7MB PDF + 19.6MB DOCX），第二份文件选择器 13:56:52 关闭，13:56:53 即检查 Prompt。旧脚本因 `editor not empty` 认定 ChatGPT 编辑框已有草稿，因此跳过粘贴，并**不是文件上传等待超时**。beta.16 重新按具体 `Edit` 控件 ID 或严格编辑框名称选择输入区，避免误把整个 ChatGPT 网页的 `Document` 文本当作草稿；识别已知附件名称造成的非空辅助文本（仅附件标签时允许继续，但不使用 Ctrl+A 覆盖任何内容）；在实际可验证的编辑框焦点中粘贴，再核对 Prompt 前缀。如果仍发现未知文字，则停止并将 Prompt 保留在剪贴板，供手动 Ctrl+V。不自动点击发送。日志 `PROMPT_EDITOR_FOUND`、`PROMPT_EDITOR_STATE`、`PROMPT_CHIP_ONLY_TEXT`、`PROMPT_FOCUS_VERIFIED`、`PROMPT_PASTE_VERIFIED` 可进一步定位 Edge 的实际控件语义。
