@@ -76,9 +76,9 @@ const bridge=sandbox.TEST_BRIDGE;
     '## 7. Key Figures, Tables, and SI Navigation',
     '## 8. My Reflections — To Be Completed',
     '## 9. Reading Summary and Retrieval Information',
-    'Australian/British English spelling',
+    'Australian/British academic English',
     'Where file creation is supported',
-    'Do not invent primary-source evidence',
+    'Never invent primary-source evidence',
     '{{title}}', '{{doi}}', '{{date}}', '{{files}}', '{{missing}}'
   ];
   for (const term of required) assert(bridge.defaultTemplate.includes(term), 'Missing English prompt: '+term);
