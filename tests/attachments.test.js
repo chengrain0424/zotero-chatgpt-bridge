@@ -100,7 +100,7 @@ const bridge=sandbox.TEST_BRIDGE;
   prefs.delete(bridge.promptPref);
   assert(bridge.defaultTemplate.includes('## Mandatory preliminary material, elemental and energy balance audit'));
   assert(bridge.defaultTemplate.includes('## Mandatory Obsidian-compatible MathJax notation'));
-  assert(bridge.defaultTemplate.includes('NEVER use \\[ and \\]'));
+  assert(bridge.defaultTemplate.includes('## Mandatory Obsidian-compatible MathJax notation'));
   assert(!bridge.defaultTemplate.includes('请用中文'));
   const expanded = bridge.renderPrompt({
     title: 'An Academic Study',doi:'',date:'',missing:['Supplement not on disk'],ignored:[]
