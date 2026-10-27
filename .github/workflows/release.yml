@@ -1,0 +1,142 @@
+name: Release (manual)
+
+# Releases are created explicitly; ordinary commits never publish an XPI.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Stable version, for example 0.4.1 (must match src/manifest.json)'
+        required: true
+        type: string
+      source_ref:
+        description: 'Branch or commit to release (prefer main after merging tested changes)'
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  windows-validation:
+    name: Windows helper validation
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+      - name: Parse Windows PowerShell helper when present
+        shell: powershell
+        run: |
+          if (-not (Test-Path 'src/windows_upload.ps1')) {
+            Write-Host 'No Windows helper in this older source: parser check not applicable'
+            exit 0
+          }
+          $tokens=$null
+          $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'src/windows_upload.ps1'),
+            [ref]$tokens,[ref]$errors)
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.ToString() }
+            exit 1
+          }
+          Write-Host 'PASS Windows PowerShell parse'
+
+  release:
+    name: Verify and publish XPI
+    needs: windows-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate requested version and refuse existing tags
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Stable releases require a version like 0.4.1 (no beta)"
+            exit 1
+          fi
+          export VERSION
+          python3 - <<'PY'
+          import os,json
+          from pathlib import Path
+          current=json.loads(Path('src/manifest.json').read_text(encoding='utf-8'))['version']
+          requested=os.environ['VERSION']
+          if current!=requested:
+              raise SystemExit(f"Manifest version {current} != requested {requested}; change source and merge before publishing")
+          PY
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Release v$VERSION already exists; refusing overwrite"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag v$VERSION already exists; refusing to reuse"
+            exit 1
+          fi
+      - name: Run project checks
+        run: |
+          set -euo pipefail
+          node --check src/bootstrap.js
+          node --check src/bridge.js
+          node --test tests/attachments.test.js
+          python3 tests/smoke.py
+      - name: Build, inspect and checksum the installer
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build_release.py --owner "${GITHUB_REPOSITORY%/*}" --repo "${GITHUB_REPOSITORY#*/}"
+          (cd dist && sha256sum -c SHA256SUMS)
+          export VERSION
+          python3 - <<'PY'
+          import json,os,zipfile
+          from pathlib import Path
+          version=os.environ['VERSION']
+          package=Path(f'dist/Zotero_to_ChatGPT_Direct_v{version}_Zotero10.xpi')
+          if not package.exists():
+              raise SystemExit(f"Missing {package}")
+          with zipfile.ZipFile(package) as z:
+              assert z.testzip() is None
+              assert json.loads(z.read('manifest.json'))['version']==version
+              names=set(z.namelist())
+              assert {'bridge.js','bootstrap.js','manifest.json'} <= names
+              if Path('src/windows_upload.ps1').exists():
+                  assert {'windows_source.js','safari_source.js'} <= names
+          print('PASS release package contents and manifest')
+          PY
+      - name: Publish versioned GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          sha="$(git rev-parse HEAD)"
+          gh release create "$tag" \
+            "dist/Zotero_to_ChatGPT_Direct_v${VERSION}_Zotero10.xpi" \
+            dist/SHA256SUMS \
+            --target "$sha" --latest \
+            --title "Zotero ChatGPT Bridge $tag (Windows + macOS)" \
+            --generate-notes
+          gh release view "$tag" --json url,name,tagName,assets
