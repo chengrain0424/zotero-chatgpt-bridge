@@ -141,7 +141,7 @@ const bridge=sandbox.TEST_BRIDGE;
   sandbox.IOUtils.writeUTF8=async(p,value)=>writtenFiles.set(p,value);
   const prepared=await bridge.prepareWindows(files[0]);
   assert(prepared.runDir.includes('/run-'),'No run directory was allocated');
-  assert(writtenFiles.get(prepared.scriptPath).startsWith('\\uFEFF'),'PowerShell helper missing UTF-8 BOM');
+  assert(writtenFiles.get(prepared.scriptPath).startsWith('\uFEFF'),'PowerShell helper missing UTF-8 BOM');
   assert(writtenFiles.get(prepared.scriptPath).includes('WIN_SCRIPT_BUILD v0.4.0beta20 uia-20261027'));
   assert(writtenFiles.get(prepared.statusPath).includes('BRIDGE_BUILD v0.4.0beta20 uia-20261027 windows'));
   assert.equal(writtenFiles.get(prepared.promptPath).length>1000,true);
