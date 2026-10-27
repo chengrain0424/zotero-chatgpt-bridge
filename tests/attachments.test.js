@@ -137,7 +137,11 @@ const bridge=sandbox.TEST_BRIDGE;
   // and that a run folder and script are prepared before PowerShell launches.
   const windowsHelper=fs.readFileSync(path.join(__dirname,'../src/windows_upload.ps1'),'utf8');
   bridge.init('test Safari source',windowsHelper);
+  assert.equal(bridge.getWindowsHelperBuild(),'v0.4.0 uia-20261027');
+  // Also accept beta build markers for compatibility with diagnostics.
+  bridge.init('test Safari source',windowsHelper.replaceAll('v0.4.0 uia-20261027','v0.4.0beta21 uia-20261027'));
   assert.equal(bridge.getWindowsHelperBuild(),'v0.4.0beta21 uia-20261027');
+  bridge.init('test Safari source',windowsHelper);
   bridge.init('test Safari source','');
   assert.throws(()=>bridge.getWindowsHelperBuild(),/missing or incomplete/);
   bridge.init('test Safari source',windowsHelper);
@@ -151,8 +155,8 @@ const bridge=sandbox.TEST_BRIDGE;
   const prepared=await bridge.prepareWindows(files[0]);
   assert(prepared.runDir.includes('/run-'),'No run directory was allocated');
   assert(writtenFiles.get(prepared.scriptPath).startsWith('\uFEFF'),'PowerShell helper missing UTF-8 BOM');
-  assert(writtenFiles.get(prepared.scriptPath).includes('WIN_SCRIPT_BUILD v0.4.0beta21 uia-20261027'));
-  assert(writtenFiles.get(prepared.statusPath).includes('BRIDGE_BUILD v0.4.0beta21 uia-20261027 windows'));
+  assert(writtenFiles.get(prepared.scriptPath).includes('WIN_SCRIPT_BUILD v0.4.0 uia-20261027'));
+  assert(writtenFiles.get(prepared.statusPath).includes('BRIDGE_BUILD v0.4.0 uia-20261027 windows'));
   assert.equal(writtenFiles.get(prepared.promptPath).length>1000,true);
   assert(prepared.files.length>=2,'PDF + SI attachments should be prepared');
   console.log('PASS: Windows embedded helper recognised, run directory and PowerShell script generated');
