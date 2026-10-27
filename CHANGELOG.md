@@ -1,3 +1,11 @@
+## v0.4.0-beta.21 — Refined research-note layout and verification-status default (Windows + macOS)
+
+- Update the shared, complete **35,986-character** research-note Prompt: figures remain integrated in Sections 1–6, with explicit warnings against mixing whole-caption Markdown emphasis and LaTeX or accidentally interpreting adsorbed-site asterisks as Markdown syntax.
+- Add measured-vs-calculated quality labels: **[Arithmetic checked]**, **[Partial balance]**, **[Order-of-magnitude estimate]**, **[Not verifiable from available sources]**. These qualify AI calculations; they do not claim primary experimental verification.
+- Discourage sprawling multi-page tables and preserve the three-column figure index; PDF pagination belongs to the external Markdown/PDF renderer, which this Zotero upload bridge cannot control.
+- Preserve the rigorous main/SI contradiction audit, preliminary material/energy balances, Obsidian MathJax $/$$ instructions and deliberately blank personal reflections.
+- Preserve beta.20's corrected Windows PowerShell helper detection and multi-PDF/Word uploads; no automatic Send. Upgrade unchanged saved beta.20 built-in prompts while preserving actual user customisations. Prompt editor limit remains 120,000 characters.
+
 ## v0.4.0-beta.20 — Fix false “Windows automation script missing” alert
 
 - Correct the Windows launch guard: beta.19 had a stale hardcoded beta.17 embedded-helper marker, rejecting its own valid PowerShell helper **before** creating a run folder.
