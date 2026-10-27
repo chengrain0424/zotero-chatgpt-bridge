@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta15 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta16 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -824,29 +824,106 @@ function Select-ExactFile([System.Windows.Automation.AutomationElement]$Dialog, 
 
 function Read-EditorText([System.Windows.Automation.AutomationElement]$Editor) {
     try {
-        $p = $Editor.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+        $p=$Editor.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
         return [string]$p.Current.Value
     } catch {}
     try {
-        $p = $Editor.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
+        $p=$Editor.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
         return [string]$p.DocumentRange.GetText(-1)
     } catch {}
     return $null
 }
 
-function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [string]$Prompt) {
-    # Always retain Prompt for manual Ctrl+V if ChatGPT's editor is unavailable.
+function Find-ChatComposer([System.Windows.Automation.AutomationElement]$Window) {
+    # Do not accept a generic Document named "Ask ChatGPT": after uploading
+    # files it may represent the entire ChatGPT page including attachment chips.
+    $editFilter=[System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Edit)
+    $edits=$Window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$editFilter)
+    $best=$null
+    $bestScore=0
+    foreach($editor in $edits) {
+        try {
+            if(-not $editor.Current.IsEnabled -or $editor.Current.IsOffscreen) { continue }
+            $name=[string]$editor.Current.Name
+            $id=[string]$editor.Current.AutomationId
+            $score=0
+            if($id -match '(?i)(^prompt-textarea$|^pending-home-input$|composer-input|message-input)') {
+                $score=100
+            } elseif($name -match '(?i)^(Ask ChatGPT|Ask anything|Message ChatGPT|Write a message|向 ChatGPT 提问|询问 ChatGPT|问任何问题)$') {
+                $score=50
+            }
+            if($score -gt $bestScore) { $best=$editor; $bestScore=$score }
+        } catch {}
+    }
+    if($null -ne $best) {
+        Log ('PROMPT_EDITOR_FOUND type=Edit score=' + $bestScore +
+            ' id=' + [string]$best.Current.AutomationId)
+        return $best
+    }
+    # Some Chromium builds expose the contenteditable as Document. Only
+    # accept explicit composer automation IDs, never the page's document.
+    $docFilter=[System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Document)
+    $docs=$Window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$docFilter)
+    foreach($doc in $docs) {
+        try {
+            if(-not $doc.Current.IsEnabled -or $doc.Current.IsOffscreen) { continue }
+            $id=[string]$doc.Current.AutomationId
+            if($id -match '(?i)^(prompt-textarea|pending-home-input|composer-input)$') {
+                Log ('PROMPT_EDITOR_FOUND type=Document id=' + $id)
+                return $doc
+            }
+        } catch {}
+    }
+    return $null
+}
+
+function Test-ComposerHasOnlyAttachments([string]$Text,[string[]]$AttachmentPaths) {
+    # The Edit's accessibility value can contain the uploaded attachment chip
+    # labels despite its editable text being empty. Allow insertion ONLY when
+    # all non-whitespace content can be accounted for by known attachment
+    # filenames. This never overwrites the content; paste only appends.
+    if([string]::IsNullOrWhiteSpace($Text)) { return $true }
+    $remainder=$Text.Trim()
+    if($remainder -match '^(?i)(Ask ChatGPT|Ask anything|Message ChatGPT|Write a message)$') {
+        return $true
+    }
+    $found=0
+    foreach($path in $AttachmentPaths) {
+        if([string]::IsNullOrWhiteSpace($path)) { continue }
+        $name=[System.IO.Path]::GetFileName($path)
+        if([string]::IsNullOrWhiteSpace($name)) { continue }
+        $pattern=[regex]::Escape($name)
+        if([regex]::IsMatch($remainder,$pattern,
+           [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+            $remainder=[regex]::Replace($remainder,$pattern,'',
+                [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            $found++
+        }
+    }
+    if($found -eq 0) { return $false }
+    # Only harmless chip separators may remain. Any other text may be a
+    # user's draft and must never be replaced or appended to automatically.
+    return ($remainder -match '^[\s,;|·•\[\]\(\)]+$' -or
+            [string]::IsNullOrWhiteSpace($remainder))
+}
+
+function Place-Prompt([System.Windows.Automation.AutomationElement]$Window,
+                     [string]$Prompt,[string[]]$AttachmentPaths) {
     [System.Windows.Forms.Clipboard]::SetText($Prompt)
-    $pattern='(?i)(Ask anything|Message ChatGPT|Ask ChatGPT|向 ChatGPT 提问|询问 ChatGPT|发送消息给 ChatGPT|问任何问题|prompt-textarea|composer-input|pending-home-input|message input|Write a message|Ask a question)'
     $editor=$null
     for($attempt=0; $attempt -lt 12; $attempt++) {
         try {
-            $current=[System.Windows.Automation.AutomationElement]::FromHandle(
+            $root=[System.Windows.Automation.AutomationElement]::FromHandle(
                 $script:ChatWindowHandle)
-            $editor=Find-UIA $current @([System.Windows.Automation.ControlType]::Edit,
-                [System.Windows.Automation.ControlType]::Document) $pattern
+            $editor=Find-ChatComposer $root
             if($null -ne $editor) { break }
-        } catch {}
+        } catch {
+            Log ('PROMPT_EDITOR_POLL_ERROR ' + $_.Exception.GetType().Name)
+        }
         Start-Sleep -Milliseconds 400
     }
     if($null -eq $editor) {
@@ -859,26 +936,31 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
             Log 'PROMPT_CLIPBOARD_READY editor text unreadable; not typing'
             return
         }
-        if(-not [string]::IsNullOrWhiteSpace($existing)) {
-            if($existing.Contains($Prompt.Substring(0,[Math]::Min(30,$Prompt.Length)))) {
-                Log 'PROMPT_ALREADY_PRESENT not duplicating'
-            } else {
-                Log 'PROMPT_CLIPBOARD_READY editor not empty; not overwriting'
-            }
+        Log ('PROMPT_EDITOR_STATE type=' + $editor.Current.ControlType.ProgrammaticName +
+             ' length=' + $existing.Length + ' expectedFiles=' + $AttachmentPaths.Count)
+        $prefix=$Prompt.Substring(0,[Math]::Min(30,$Prompt.Length))
+        if($existing.Contains($prefix)) {
+            Log 'PROMPT_ALREADY_PRESENT not duplicating'
             return
+        }
+        $chipOnly=Test-ComposerHasOnlyAttachments $existing $AttachmentPaths
+        if(-not $chipOnly) {
+            Log 'PROMPT_CLIPBOARD_READY editor contains non-attachment text; not modifying'
+            return
+        }
+        if(-not [string]::IsNullOrWhiteSpace($existing)) {
+            Log 'PROMPT_CHIP_ONLY_TEXT ignoring known attachment labels'
         }
         try {
             $editor.SetFocus()
-            Start-Sleep -Milliseconds 120
+            Start-Sleep -Milliseconds 150
         } catch { Log 'PROMPT_SETFOCUS_UNAVAILABLE' }
         $focused=[System.Windows.Automation.AutomationElement]::FocusedElement
         $focusOK=Test-UIATarget $editor $focused
         if(-not $focusOK) {
             Log 'PROMPT_MOUSE_FOCUS_ATTEMPT'
-            # This editor is named and empty. Hit-test before clicking to
-            # avoid sending a long prompt to a PDF chip or another field.
             if(Click-UIA-Verified $editor) {
-                Start-Sleep -Milliseconds 200
+                Start-Sleep -Milliseconds 220
                 $focused=[System.Windows.Automation.AutomationElement]::FocusedElement
                 $focusOK=Test-UIATarget $editor $focused
             }
@@ -888,29 +970,28 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
             return
         }
         Log 'PROMPT_FOCUS_VERIFIED'
-        # Verify the editor is still empty before inserting. Never replace a
-        # user's existing draft or automatically press Send.
         $before=Read-EditorText $editor
-        if($null -eq $before -or -not [string]::IsNullOrWhiteSpace($before)) {
+        if($null -eq $before -or
+           -not (Test-ComposerHasOnlyAttachments $before $AttachmentPaths)) {
             Log 'PROMPT_CLIPBOARD_READY editor changed before paste'
             return
         }
+        # Do not Ctrl+A or delete. Insert only into the verified composer.
         [System.Windows.Forms.SendKeys]::SendWait('^v')
         Start-Sleep -Milliseconds 650
         $readback=Read-EditorText $editor
-        if($null -ne $readback -and
-           $readback.Contains($Prompt.Substring(0,[Math]::Min($Prompt.Length,30)))) {
+        if($null -ne $readback -and $readback.Contains($prefix)) {
             Log 'PROMPT_PASTE_VERIFIED (first 30 chars)'
         } else {
             Log 'PROMPT_PASTE_UNVERIFIED check composer; Ctrl+V manually'
         }
     } catch {
-        Log ('PROMPT_CLIPBOARD_READY paste skipped: '+$_.Exception.GetType().Name)
+        Log ('PROMPT_CLIPBOARD_READY paste skipped: ' + $_.Exception.GetType().Name)
     }
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta15 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta16 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
@@ -980,7 +1061,7 @@ try {
     [void][ZcgWin32]::SetForegroundWindow($browserWindow.Handle)
     $foreground=Wait-ChatWindow 2
     if ($null -ne $foreground -and $foreground.Handle -eq $script:ChatWindowHandle) {
-        Place-Prompt $foreground.Element $prompt
+        Place-Prompt $foreground.Element $prompt $paths
     } else {
         Log 'PROMPT_CLIPBOARD_READY chat not foreground after uploads; paste manually'
     }
@@ -998,7 +1079,7 @@ try {
     try {
         $fg=Get-ForegroundBrowser
         if ($null -ne $fg -and $fg.Handle -eq $script:ChatWindowHandle) {
-            Place-Prompt $fg.Element $prompt
+            Place-Prompt $fg.Element $prompt $paths
         } else {
             Log 'PROMPT_CLIPBOARD_READY upload error; browser not foreground'
         }
