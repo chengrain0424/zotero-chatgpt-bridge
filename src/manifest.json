@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero to ChatGPT Chat (macOS Safari / Windows Chromium)",
-  "version": "0.4.0-beta.12",
-  "description": "Windows Edge/Chrome experimental: verified address-bar navigation to Zotero attachment folder, native filename text verification; never auto-send.",
+  "version": "0.4.0-beta.13",
+  "description": "Experimental Windows uploader: isolated one-file staging, verifies PDF header and filename, Enter from focused file-name field; no auto-send.",
   "author": "ChatGPT-assisted community build",
   "applications": {
     "zotero": {
