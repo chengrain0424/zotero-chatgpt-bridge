@@ -4,7 +4,7 @@ import json, re, tempfile, os
 ROOT=Path(__file__).resolve().parents[1]
 src=ROOT/'src'
 manifest=json.loads((src/'manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='0.4.0-beta.15'
+assert manifest['version']=='0.4.0-beta.16'
 win=(src/'windows_upload.ps1').read_text(encoding='utf-8')
 assert 'NO_AUTO_SEND' in win
 assert 'Select-ExactFile' in win
@@ -52,6 +52,14 @@ assert 'UPLOAD_PLUS_HIT_RETRY item=' in win
 assert 'UPLOAD_PLUS_HIT_TIMEOUT item=' in win
 assert 'PROMPT_MOUSE_FOCUS_ATTEMPT' in win
 assert 'PROMPT_FOCUS_VERIFIED' in win
+assert 'function Find-ChatComposer(' in win
+assert 'function Test-ComposerHasOnlyAttachments(' in win
+assert 'PROMPT_EDITOR_STATE type=' in win
+assert 'PROMPT_CHIP_ONLY_TEXT' in win
+assert 'PROMPT_CLIPBOARD_READY editor contains non-attachment text' in win
+assert "if(-not $chipOnly)" in win
+assert "if($existing.Contains($prefix))" in win
+assert "PLACEHOLDER_INTENTIONAL_DO_NOT_SEND" not in win
 assert 'PROMPT_ALREADY_PRESENT not duplicating' in win
 assert 'PROMPT_CLIPBOARD_READY composer focus unverified' in win
 assert 'Click-UIA-Verified $editor' in win
@@ -83,7 +91,7 @@ assert 'ControlType]::Document' in win
 assert 'PROMPT_PASTE_VERIFIED' in win
 assert win.index('for ($i=0; $i -lt $paths.Count; $i++)') < win.index('Place-Prompt $foreground.Element $prompt')
 assert 'SetForegroundWindow' in win
-assert 'WIN_SCRIPT_BUILD v0.4.0beta15 uia-20261027' in win
+assert 'WIN_SCRIPT_BUILD v0.4.0beta16 uia-20261027' in win
 assert 'prepareWindows(item)' in (src/'bridge.js').read_text(encoding='utf-8')
 assert manifest['applications']['zotero']['id']=='zotero-chatgpt-safari@local.bridge'
 assert manifest['applications']['zotero']['strict_max_version']=='10.0.*'
