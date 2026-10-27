@@ -207,8 +207,18 @@ var ZCGBridge = {
       });
       context.appendChild(m);
     }
+    if(context && !doc.getElementById("zcg-import-note-command")){
+      const m=doc.createXULElement("menuitem");
+      m.id="zcg-import-note-command";
+      m.setAttribute("label","导入 ChatGPT ZIP / Markdown 阅读笔记");
+      m.addEventListener("command",()=>{void ZCGNoteImporter.importSelected(win);});
+      context.appendChild(m);
+    }
   },
-  removeUI(win){try{win.document.getElementById("zcg-context-command")?.remove();}catch(_){}},
+  removeUI(win){
+    try{win.document.getElementById("zcg-context-command")?.remove();}catch(_){}
+    try{win.document.getElementById("zcg-import-note-command")?.remove();}catch(_){}
+  },
   async attachmentsFor(item) {
     if (item.isNote?.()) throw new Error("选中的是笔记，请选择论文或 PDF 附件。");
     const parent = item.isAttachment?.() && item.parentItemID
