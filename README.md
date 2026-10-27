@@ -70,3 +70,7 @@ Windows support is under active development in the `feature/windows-edge-chrome`
 ### Windows beta.4 upload-button diagnostics
 
 If ChatGPT opens but no attachment chooser appears, inspect the task's `status.log` for `UPLOAD_PLUS_*`, `UPLOAD_MENU_*`, and `UIA_CANDIDATE` entries. Sign into a regular Chat in Edge or Chrome first. The helper attempts prompt paste before selecting attachments; when the composer cannot be verified, the prompt stays on the clipboard for manual Ctrl+V. This is experimental: closing the picker does not prove file ingestion, and **Send is never clicked**. Redact paths/private titles before sharing logs.
+
+### Windows beta.14 multi-attachment upload
+
+Sequentially attaches the main PDF, followed by supported SI PDFs and Word files (DOCX/DOC) from the same Zotero item. Each file uses a separate one-file staging directory. On every subsequent file, the script rechecks the foreground ChatGPT window and reacquires the plus button, allowing it to become enabled after asynchronous uploads. Prompt insertion occurs after the file pickers. It never clicks Send. The file picker closing does not prove ingestion; confirm each attachment chip before submission. The native Windows CI fixture covers a main PDF, SI PDF, SI DOCX, and an excluded `.zotero-reader-state`.
