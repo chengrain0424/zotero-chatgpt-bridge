@@ -51,8 +51,8 @@ jobs:
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/windows-edge-chrome'
         uses: actions/upload-artifact@v4
         with:
-          name: Zotero-CI-XPI
-          path: dist/*.xpi
+          name: Zotero-v0.4.1-development-XPI
+          path: dist/Zotero_to_ChatGPT_Direct_v0.4.1_Zotero10.xpi
           if-no-files-found: error
           retention-days: 7
 
