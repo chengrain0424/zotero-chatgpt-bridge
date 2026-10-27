@@ -82,7 +82,22 @@ const bridge=sandbox.TEST_BRIDGE;
     '{{title}}', '{{doi}}', '{{date}}', '{{files}}', '{{missing}}'
   ];
   for (const term of required) assert(bridge.defaultTemplate.includes(term), 'Missing English prompt: '+term);
-  assert(bridge.defaultTemplate.length > 9000 && bridge.defaultTemplate.length <= 20000);
+  assert.equal(bridge.defaultTemplate.length, 29126, 'Full latest prompt must be intact');
+  assert.equal(bridge.promptMaxLength, 50000);
+  assert(bridge.defaultTemplate.length < bridge.promptMaxLength);
+  assert(bridge.defaultTemplate.includes('## IV. Scientific tables: structure, readability, and presentation'));
+  assert(bridge.defaultTemplate.includes('## II. Mandatory cross-source consistency and quantitative verification'));
+  assert(bridge.defaultTemplate.includes('## III. Scientific figure integration and image handling'));
+  assert(bridge.defaultTemplate.includes('## 7. Key Figures, Tables, and SI Navigation'));
+  assert(bridge.defaultTemplate.includes('Use a compact three-column table:'));
+  assert(bridge.defaultTemplate.includes('### Final quality-control checklist'));
+  bridge.setTemplate(bridge.defaultTemplate);
+  assert.equal(prefs.get(bridge.promptPref).length,29126,'Full prompt must survive preference save');
+  assert.equal(bridge.getTemplate().length,29126);
+  assert.throws(()=>bridge.setTemplate('X'.repeat(50001)),/50000/);
+  bridge.setTemplate('X'.repeat(50000));
+  assert.equal(bridge.getTemplate().length,50000,'50k capacity must work');
+  prefs.delete(bridge.promptPref);
   assert(!bridge.defaultTemplate.includes('请用中文'));
   const expanded = bridge.renderPrompt({
     title: 'An Academic Study',doi:'',date:'',missing:['Supplement not on disk'],ignored:[]
@@ -97,6 +112,8 @@ const bridge=sandbox.TEST_BRIDGE;
   assert(!expanded.includes('：未记录'));
   prefs.set(bridge.promptPref, bridge.legacyDefaultTemplate);
   assert.equal(bridge.getTemplate(), bridge.defaultTemplate, 'Stored old default should migrate');
+  prefs.set(bridge.promptPref, bridge.previousEnglishDefaultTemplate);
+  assert.equal(bridge.getTemplate(),bridge.defaultTemplate,'Saved beta17 English default should migrate');
   prefs.set(bridge.promptPref, 'Custom text; preserve personal preferences');
   assert.equal(bridge.getTemplate(),'Custom text; preserve personal preferences');
   prefs.delete(bridge.promptPref);
