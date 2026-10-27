@@ -68,3 +68,14 @@ jobs:
           echo "$actual"
           test "$actual" = "$expected"
           gh release view v0.4.0 --json url,tagName,name
+
+      - name: Mark historical releases and restore v0.4.0 Latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # GitHub auto-selected the newly created v0.3.0 archive as Latest.
+          gh release edit v0.3.0-beta --prerelease
+          gh release edit v0.4.0 --latest
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')" = 'v0.4.0'
+          echo 'PASS: v0.4.0 is Latest; historical 0.3.0 remains downloadable.'
