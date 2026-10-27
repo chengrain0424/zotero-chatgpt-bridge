@@ -82,7 +82,7 @@ const bridge=sandbox.TEST_BRIDGE;
     '{{title}}', '{{doi}}', '{{date}}', '{{files}}', '{{missing}}'
   ];
   for (const term of required) assert(bridge.defaultTemplate.includes(term), 'Missing English prompt: '+term);
-  assert.equal(bridge.defaultTemplate.length, 33608, 'Full balance/MathJax default must be intact');
+  assert.equal(bridge.defaultTemplate.length, 33105, 'Full balance/MathJax default must be intact');
   assert.equal(bridge.promptMaxLength, 120000);
   assert(bridge.defaultTemplate.length < bridge.promptMaxLength);
   assert(bridge.defaultTemplate.includes('## IV. Scientific tables: structure, readability, and presentation'));
@@ -92,14 +92,14 @@ const bridge=sandbox.TEST_BRIDGE;
   assert(bridge.defaultTemplate.includes('Use a compact three-column table:'));
   assert(bridge.defaultTemplate.includes('### Final quality-control checklist'));
   bridge.setTemplate(bridge.defaultTemplate);
-  assert.equal(prefs.get(bridge.promptPref).length,33608,'Full prompt must survive preference save');
-  assert.equal(bridge.getTemplate().length,33608);
+  assert.equal(prefs.get(bridge.promptPref).length,33105,'Full prompt must survive preference save');
+  assert.equal(bridge.getTemplate().length,33105);
   assert.throws(()=>bridge.setTemplate('X'.repeat(120001)),/120000/);
   bridge.setTemplate('X'.repeat(120000));
   assert.equal(bridge.getTemplate().length,120000,'120k capacity must work');
   prefs.delete(bridge.promptPref);
-  assert(bridge.defaultTemplate.includes('## Additional mandatory audit: material, elemental and energy balances'));
-  assert(bridge.defaultTemplate.includes('## Mandatory Obsidian/MathJax mathematical formatting'));
+  assert(bridge.defaultTemplate.includes('## Mandatory preliminary material, elemental and energy balance audit'));
+  assert(bridge.defaultTemplate.includes('## Mandatory Obsidian-compatible MathJax notation'));
   assert(bridge.defaultTemplate.includes('NEVER use \\[ and \\]'));
   assert(!bridge.defaultTemplate.includes('请用中文'));
   const expanded = bridge.renderPrompt({
