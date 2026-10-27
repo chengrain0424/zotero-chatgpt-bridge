@@ -387,10 +387,23 @@ var ZCGBridge = {
     try { Zotero.Utilities.copyToClipboard(prompt); } catch (_) {}
     return {...data, files, linkDir, promptPath, scriptPath, statusPath, uploadListPath, launcherPath, runDir};
   },
+  getWindowsHelperBuild() {
+    // Check the actual embedded helper, not a release-specific hardcoded tag.
+    // Release-version consistency is verified when the XPI is built.
+    const src=this.windowsScriptSource;
+    if (typeof src!=="string" || src.length<10000 ||
+        !src.includes("function Prepare-UploadStaging(") ||
+        !src.includes("function Select-ExactFile(") ||
+        !src.includes("function Place-Prompt(")) {
+      throw new Error("Windows automation script missing or incomplete in the installed package");
+    }
+    const marker=src.match(/WIN_SCRIPT_BUILD\\s+(v\\d+\\.\\d+\\.\\d+beta\\d+)\\s+(uia-\\d{8})/);
+    if (!marker) throw new Error("Windows helper build marker missing from installed package");
+    return marker[1]+" "+marker[2];
+  },
   async prepareWindows(item) {
+    const helperBuild=this.getWindowsHelperBuild();
     const data=await this.attachmentsFor(item);
-    if (typeof this.windowsScriptSource!=="string" || !this.windowsScriptSource.includes("WIN_SCRIPT_BUILD v0.4.0beta17 uia-20261027"))
-      throw new Error("Windows automation script missing from installed package");
     const stamp=new Date().toISOString().replace(/[^0-9]/g,"").slice(0,14);
     const nonce=Math.random().toString(36).slice(2,10);
     const cache=PathUtils.join(Services.dirsvc.get("TmpD",Ci.nsIFile).path,"ZoteroChatGPTBridge");
@@ -412,7 +425,7 @@ var ZCGBridge = {
     await IOUtils.writeUTF8(uploadListPath,files.map(f=>f.originalPath).join("\n")+"\n");
     // Windows PowerShell 5.1 expects a BOM for a UTF-8 script with Chinese text.
     await IOUtils.writeUTF8(scriptPath,"\uFEFF"+this.windowsScriptSource.replace(/^\uFEFF/,""));
-    await IOUtils.writeUTF8(statusPath,"BRIDGE_BUILD v0.4.0beta17 windows\nSCRIPT_SAVED_UTF8_BOM\n");
+    await IOUtils.writeUTF8(statusPath,"BRIDGE_BUILD "+helperBuild+" windows\nSCRIPT_SAVED_UTF8_BOM\n");
     await IOUtils.writeUTF8(PathUtils.join(runDir,"selection.json"),
       JSON.stringify({itemID:data.record.id,title:data.title,files,
         missing:data.missing,ignored:data.ignored,generatedAt:new Date().toISOString()},null,2));
