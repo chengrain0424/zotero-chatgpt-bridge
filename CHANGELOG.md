@@ -1,3 +1,10 @@
+## v0.4.0-beta.20 — Fix false “Windows automation script missing” alert
+
+- Correct the Windows launch guard: beta.19 had a stale hardcoded beta.17 embedded-helper marker, rejecting its own valid PowerShell helper **before** creating a run folder.
+- Validate the embedded helper's actual build signature and required entry points instead of comparing to a hardcoded old release; write the detected helper build to status.log.
+- Add a regression test that injects the real Windows helper into the Zotero bridge and confirms a new run folder, UTF-8-BOM script, upload list and status file are prepared.
+- Verify packaged helper marker matches manifest version at release time. Unchanged: 33,105-character English research-note default, 120,000-character editor limit, Obsidian MathJax guidance, cross-source and material/energy balance checks, safe sequential PDF/Word attachment uploads and Prompt paste.
+
 ## v0.4.0-beta.19 — Fix prompt input clipping; add material/energy balances and MathJax requirements
 
 - New shared built-in Prompt (**33,105 characters**) extends the beta.18 note with rigorous preliminary elemental/material and power/energy balance checks, balance-completeness labels, and Obsidian-compatible MathJax delimiters.
