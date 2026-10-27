@@ -82,3 +82,7 @@ The built-in prompt now requests a detailed, fully English Markdown Zotero readi
 ### v0.4.0-beta.18: full prompt and 50,000-character editor
 
 Both macOS Safari and Windows Edge/Chrome share the complete 29,126-character latest English Markdown research-note Prompt, including cross-source consistency checks, inline original figures, concise scientific tables, and the 0–9 reading-note structure. Both Zotero prompt inputs now accept 50,000 characters; the reader's prompt editor displays a live counter. Saved old built-in defaults (Chinese or beta.17 English) migrate to the new default, while genuinely customised prompts remain unchanged. Windows paste diagnostic requires the full expected prompt instead of only the first 30 characters; no auto-send.
+
+### beta.21: cleaner figure captions, clearer calculation confidence, shorter tables
+
+Unified Windows/macOS default prompt (35,986 characters) adds reliable Markdown/MathJax figure-caption syntax, flags AI-calculated quantities as arithmetic checks versus partial balances/estimates/unverifiable claims, and discourages sprawling multi-page tables. It retains Obsidian-compatible $/$$ equations, cross-source consistency audits and inline original figures. The Zotero bridge does not render PDFs: page-break styling in an external Markdown-to-PDF converter must be configured separately. Saved unchanged beta.20 built-in prompts migrate to the new version, while genuine custom prompts remain unchanged. No auto-send.
