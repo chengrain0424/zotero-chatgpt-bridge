@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta10 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta11 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -30,6 +30,18 @@ public static class ZcgWin32 {
     [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint command);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO info);
+    [StructLayout(LayoutKind.Sequential)] public struct RECT {
+        public int Left, Top, Right, Bottom;
+    }
+    [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO {
+        public uint cbSize;
+        public uint flags;
+        public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret;
+        public RECT rcCaret;
+    }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
     [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT pt);
@@ -580,31 +592,127 @@ function Write-FilenameWithKeyboard([System.Windows.Automation.AutomationElement
     }
 }
 
+function Get-NativeFileNameFocus([System.Windows.Automation.AutomationElement]$Dialog) {
+    # Windows 11 may expose 1148 as Pane only, despite its real native input
+    # receiving keyboard focus. Inspect Win32 handles rather than UIA text.
+    $active=Get-FileDialog
+    if ($null -eq $active -or -not $active.Equals($Dialog)) { return $null }
+    $dlg=[ZcgWin32]::GetForegroundWindow()
+    [uint32]$processId=0
+    [uint32]$threadId=[ZcgWin32]::GetWindowThreadProcessId($dlg,[ref]$processId)
+    if ($threadId -eq 0) { return $null }
+    $info=New-Object ZcgWin32+GUITHREADINFO
+    $info.cbSize=[uint32][System.Runtime.InteropServices.Marshal]::SizeOf(
+        [type][ZcgWin32+GUITHREADINFO])
+    if (-not [ZcgWin32]::GetGUIThreadInfo($threadId,[ref]$info)) { return $null }
+    if ($info.hwndFocus -eq [IntPtr]::Zero) { return $null }
+    $node=$info.hwndFocus
+    $belongs=$false
+    $filenameAncestor=$false
+    $classes=New-Object 'System.Collections.Generic.List[string]'
+    for($depth=0; $depth -lt 20 -and $node -ne [IntPtr]::Zero; $depth++) {
+        if($node -eq $dlg) { $belongs=$true; break }
+        $classBuffer=New-Object System.Text.StringBuilder 128
+        [void][ZcgWin32]::GetClassName($node,$classBuffer,$classBuffer.Capacity)
+        $id=[ZcgWin32]::GetDlgCtrlID($node)
+        if($id -eq 1148) { $filenameAncestor=$true }
+        if($classes.Count -lt 12) { $classes.Add(($classBuffer.ToString()+'#'+$id)) }
+        $parent=[ZcgWin32]::GetParent($node)
+        if($parent -eq $node) { break }
+        $node=$parent
+    }
+    Log ('FILENAME_WIN32_FOCUS inPicker=' + $belongs + ' has1148=' +
+        $filenameAncestor + ' classes=' + [string]::Join('>', $classes.ToArray()))
+    return [pscustomobject]@{
+        Verified=($belongs -and $filenameAncestor);
+        FocusHandle=$info.hwndFocus
+    }
+}
+
+function Write-FilenameUsingNativeFocus([System.Windows.Automation.AutomationElement]$Dialog,
+                                        [string]$FullPath) {
+    # Alt+N typically focuses "File name:" in the native Windows Open dialog.
+    # A locale or dialog variation can ignore it: in that case, fail closed.
+    # No Ctrl+A/V/C unless the Win32 focused control is within ID 1148.
+    if($null -eq (Get-FileDialog)) { return $false }
+    Log 'FILENAME_NATIVE_ALT_N_ATTEMPT'
+    try { [System.Windows.Forms.SendKeys]::SendWait('%n') }
+    catch { Log ('FILENAME_NATIVE_ALT_N_ERROR '+$_.Exception.GetType().Name); return $false }
+    Start-Sleep -Milliseconds 150
+    $focus=Get-NativeFileNameFocus $Dialog
+    if($null -eq $focus -or -not $focus.Verified) {
+        Log 'FILENAME_NATIVE_FOCUS_UNVERIFIED stopped'
+        return $false
+    }
+    Log 'FILENAME_NATIVE_FOCUS_VERIFIED'
+    try {
+        [System.Windows.Forms.Clipboard]::SetText($FullPath)
+        $check=Get-NativeFileNameFocus $Dialog
+        if($null -eq $check -or -not $check.Verified -or
+            $check.FocusHandle -ne $focus.FocusHandle) {
+            Log 'FILENAME_NATIVE_FOCUS_CHANGED_BEFORE_PASTE stopped'; return $false
+        }
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait('^v')
+        Start-Sleep -Milliseconds 250
+        $check=Get-NativeFileNameFocus $Dialog
+        if($null -eq $check -or -not $check.Verified -or
+            $check.FocusHandle -ne $focus.FocusHandle) {
+            Log 'FILENAME_NATIVE_FOCUS_CHANGED_AFTER_PASTE stopped'; return $false
+        }
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait('^c')
+        Start-Sleep -Milliseconds 180
+        $readback=[System.Windows.Forms.Clipboard]::GetText()
+        if(-not [string]::Equals($readback,$FullPath,
+            [System.StringComparison]::Ordinal)) {
+            Log 'FILENAME_NATIVE_READBACK_MISMATCH stopped'
+            return $false
+        }
+        Log 'FILENAME_NATIVE_READBACK_VERIFIED'
+        return $true
+    } catch {
+        Log ('FILENAME_NATIVE_KEYBOARD_ERROR '+$_.Exception.GetType().Name)
+        return $false
+    } finally {
+        try {
+            if(-not [string]::IsNullOrEmpty($script:PromptValue)) {
+                [System.Windows.Forms.Clipboard]::SetText($script:PromptValue)
+            }
+        } catch {}
+    }
+}
+
 function Select-ExactFile([System.Windows.Automation.AutomationElement]$Dialog, [string]$FullPath) {
     if (-not [System.IO.File]::Exists($FullPath)) { throw '待上传的本地附件已不存在，请重新在 Zotero 中选择。' }
     if ($null -eq (Get-FileDialog)) { throw '原生文件选择器不是当前活动窗口，已停止。' }
     $field=Find-FilenameControl $Dialog
-    if ($null -eq $field) { throw '未找到可确认的文件名输入框，已停止。' }
-    try {
-        $controlType=$field.Current.ControlType.ProgrammaticName
-        $controlId=[string]$field.Current.AutomationId
-        Log ('FILENAME_FIELD type=' + $controlType + ' automationId=' + $controlId)
-    } catch {}
     $verified=$false
-    # First try an actual writable ValuePattern if offered by Windows UIA.
-    try {
-        $value=$field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-        if (-not $value.Current.IsReadOnly) {
-            $value.SetValue($FullPath)
-            $verified=[string]::Equals([string]$value.Current.Value,
-                                      $FullPath,[System.StringComparison]::Ordinal)
-            if ($verified) { Log 'FILENAME_VALUEPATTERN_VERIFIED' }
+    if ($null -ne $field) {
+        try {
+            $controlType=$field.Current.ControlType.ProgrammaticName
+            $controlId=[string]$field.Current.AutomationId
+            Log ('FILENAME_FIELD type=' + $controlType + ' automationId=' + $controlId)
+        } catch {}
+        # First try an actual writable ValuePattern if offered by Windows UIA.
+        try {
+            $value=$field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+            if (-not $value.Current.IsReadOnly) {
+                $value.SetValue($FullPath)
+                $verified=[string]::Equals([string]$value.Current.Value,
+                                          $FullPath,[System.StringComparison]::Ordinal)
+                if ($verified) { Log 'FILENAME_VALUEPATTERN_VERIFIED' }
+            }
+        } catch {
+            Log ('FILENAME_VALUEPATTERN_UNAVAILABLE ' + $_.Exception.GetType().Name)
         }
-    } catch {
-        Log ('FILENAME_VALUEPATTERN_UNAVAILABLE ' + $_.Exception.GetType().Name)
+        if (-not $verified) {
+            $verified=Write-FilenameWithKeyboard $Dialog $field $FullPath
+        }
     }
     if (-not $verified) {
-        $verified=Write-FilenameWithKeyboard $Dialog $field $FullPath
+        # No UIA Edit (only Pane/1148): inspect verified native Win32 focus.
+        $verified=Write-FilenameUsingNativeFocus $Dialog $FullPath
     }
     if (-not $verified) {
         throw '无法验证文件名输入框中的完整附件路径，未点击“打开”。'
@@ -686,7 +794,7 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta10 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta11 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
