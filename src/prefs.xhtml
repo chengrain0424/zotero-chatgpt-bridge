@@ -13,9 +13,9 @@
       <html:option value="all">当前文献条目下全部受支持的本地附件</html:option>
       <html:option value="si">正文 PDF + 名称可识别的 SI</html:option>
     </html:select>
-    <html:label for="zcg-template">自定义 Prompt（留空使用默认科研分析 Prompt）</html:label>
+    <html:label for="zcg-template">自定义 Prompt（最大 50,000 字符；留空使用最新版默认科研分析 Prompt）</html:label>
     <html:textarea id="zcg-template" preference="extensions.zoteroChatGPTBridge.promptTemplate"
-                   rows="12" maxlength="20000" style="width:100%;min-height:230px;box-sizing:border-box;"/>
+                   rows="12" maxlength="50000" style="width:100%;min-height:230px;box-sizing:border-box;"/>
     <description>占位符：{{title}}、{{doi}}、{{date}}、{{files}}、{{missing}}。修改后请先用公开论文测试，不会自动发送消息。</description>
   </groupbox>
 </vbox>
