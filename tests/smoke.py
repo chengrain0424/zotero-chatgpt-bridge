@@ -4,7 +4,7 @@ import json, re, tempfile, os
 ROOT=Path(__file__).resolve().parents[1]
 src=ROOT/'src'
 manifest=json.loads((src/'manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='0.4.0-beta.18'
+assert manifest['version']=='0.4.0-beta.19'
 win=(src/'windows_upload.ps1').read_text(encoding='utf-8')
 assert 'NO_AUTO_SEND' in win
 assert 'Select-ExactFile' in win
@@ -91,7 +91,7 @@ assert 'ControlType]::Document' in win
 assert 'PROMPT_PASTE_VERIFIED' in win
 assert win.index('for ($i=0; $i -lt $paths.Count; $i++)') < win.index('Place-Prompt $foreground.Element $prompt')
 assert 'SetForegroundWindow' in win
-assert 'WIN_SCRIPT_BUILD v0.4.0beta18 uia-20261027' in win
+assert 'WIN_SCRIPT_BUILD v0.4.0beta19 uia-20261027' in win
 assert 'prepareWindows(item)' in (src/'bridge.js').read_text(encoding='utf-8')
 assert '"Not recorded"' in (src/'bridge.js').read_text(encoding='utf-8')
 assert '"None"' in (src/'bridge.js').read_text(encoding='utf-8')
@@ -140,9 +140,12 @@ print('PASS v0.3.9: version, singleton staging, restored native keyboard picker;
 # Prompt persistence limits and the full-paste diagnostic must not regress.
 bridge_text=(src/'bridge.js').read_text(encoding='utf-8')
 prefs_text=(src/'prefs.xhtml').read_text(encoding='utf-8')
-assert 'promptMaxLength: 50000' in bridge_text
-assert 'area.maxLength=this.promptMaxLength' in bridge_text
-assert 'maxlength="50000"' in prefs_text
+assert 'promptMaxLength: 120000' in bridge_text
+assert 'area.removeAttribute("maxlength")' in bridge_text
+assert 'area.setRangeText(pasted' in bridge_text
+assert 'maxlength=' not in prefs_text
+assert 'previousBeta18DefaultTemplate:' in bridge_text
+assert '保存后全文校验失败' in bridge_text
 assert 'PROMPT_PASTE_VERIFIED_FULL' in win
 assert 'PROMPT_PASTE_UNVERIFIED_FULL' in win
 assert 'PROMPT_PASTE_VERIFIED (first 30 chars)' not in win
