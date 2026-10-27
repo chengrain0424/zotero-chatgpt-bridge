@@ -24,7 +24,7 @@ jobs:
           python3 tests/smoke.py
           mkdir -p /tmp/zotero-old
           for v in 0.3.0 0.3.9; do
-            git show "v$v-beta:dist/Zotero_to_ChatGPT_Direct_v$v_Zotero10.xpi" > "/tmp/zotero-old/Zotero_to_ChatGPT_Direct_v$v_Zotero10.xpi"
+            git show "v$v-beta:dist/Zotero_to_ChatGPT_Direct_v${v}_Zotero10.xpi" > "/tmp/zotero-old/Zotero_to_ChatGPT_Direct_v${v}_Zotero10.xpi"
           done
           python3 - <<'PY'
           import json,zipfile
