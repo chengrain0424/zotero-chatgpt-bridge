@@ -140,3 +140,11 @@ beta.15 实际日志显示：两份附件均完成原生文件选择（约 7.7MB
 ### v0.4.0 正式版（Windows + macOS）
 
 整理 Release，只保留 **v0.3.0 / v0.3.9 / v0.4.0** 三个版本。v0.4.0 使用最终 beta.21 的完整功能与 35,986 字符科研阅读 Prompt，修复 Windows 原生文件选择器、正文和 SI PDF/DOCX 连续上传、Obsidian MathJax 兼容公式指令、物料／能量衡算、紧凑 Markdown 表格与图文混排；最多可编辑 120,000 字符。仍不自动发送。在 Zotero 10 中安装新版 XPI 后完全重启，再于 ⚙ 选择「恢复默认」启用新模板。
+
+## v0.4.1 开发构建 — ChatGPT ZIP 导入为文献子笔记
+
+在 Zotero 选中目标文献后可右键选择 **「导入 ChatGPT ZIP / Markdown 阅读笔记」** 并选取 ChatGPT 下载的 ZIP，或在右侧文献详情的笔记导入区拖入单个 ZIP/MD 文件。插件识别 ZIP 内 Markdown 和 PNG/JPEG/GIF/WebP 图片，安全解压并调用 Better Notes 的 `Zotero.BetterNotes.api.$import.fromMD(path,{noteId,ignoreVersion:true})` 进行导入，创建属于当前文献的子笔记。**Better Notes 是必需依赖**，缺少时会报错，不创建空笔记。原始 ZIP 默认尝试以普通附件方式保存到同一文献，以便回溯。
+
+为减少误操作：每次只导入一个 ZIP；ZIP 不能含路径穿越或异常条目；单个 ZIP 不能超过 80 MB，解压总量最多 120 MB，单个 MD 最多 8 MB，图片单张最多 24 MB；如果 ZIP 内存在多个不能唯一识别的 Markdown 文件，则要求先整理。重复导入创建新子笔记而不覆盖旧笔记。解压工作区暂留系统临时目录；请用 Zotero 的笔记实际检查配图和公式，并保留原始 ZIP 备份。直接向 Zotero **文献列表**拖文件仍是 Zotero 原生行为，插件只接管右侧的专用拖放区域。
+
+这是 v0.4.1 功能分支开发构建，尚需 Zotero 10 + Better Notes 实机验证；不是已发布的正式 v0.4.1 Release。正式 v0.4.0 安装包不变。
