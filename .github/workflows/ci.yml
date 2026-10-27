@@ -1,10 +1,31 @@
-name: Static checks
+name: CI
+
+# Feature branches with open PRs are tested by pull_request only, not push too.
+# This prevents duplicate runs/emails for each change.
 on:
   push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,7 +35,6 @@ jobs:
         run: |
           node --check src/bootstrap.js
           node --check src/bridge.js
-          node --check src/bootstrap.js
           node --test tests/attachments.test.js
       - name: Static smoke test
         run: python3 tests/smoke.py
@@ -24,20 +44,18 @@ jobs:
           python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
           python3 -m json.tool dist/updates.json > /dev/null
 
-      - name: Build experimental Windows installer
-        if: github.ref == 'refs/heads/feature/windows-edge-chrome' || github.head_ref == 'feature/windows-edge-chrome'
-        run: python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
-      - name: Upload Windows XPI installer
-        if: github.ref == 'refs/heads/feature/windows-edge-chrome' || github.head_ref == 'feature/windows-edge-chrome'
+      - name: Upload CI XPI artifact for review (not a Release)
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: Zotero-Windows-Experimental-XPI
-          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0_Zotero10.xpi
+          name: Zotero-CI-XPI
+          path: dist/*.xpi
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
   windows-parser:
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Parse Windows helper in Windows PowerShell 5.1
