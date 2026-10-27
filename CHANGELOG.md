@@ -1,3 +1,11 @@
+### v0.4.1 development UX refinement — import panel and optional ZIP
+
+- Change ZIP backup default to **OFF**. Users may opt in via the checkbox on the primary reference item pane; existing ZIP attachments are never deleted automatically.
+- Add a concise status line displaying the total Zotero child-note count and tagged ChatGPT-import note count, plus a shortcut to the most recently imported note. New imports receive a lightweight `ChatGPT Bridge Import` tag; older notes are not changed.
+- Hide the entire custom importer section (including side-navigation entry) when selecting a PDF/SI attachment or child note, using Zotero's documented item-pane `onItemChange({setEnabled})` hook.
+- Existing ZIP/MD drop zone, native file picker fix, and Better Notes import flow remain unchanged. CI regression tests cover section visibility, note status and opt-in backup.
+- Development build only; no new GitHub Release until Zotero/Better Notes end-to-end verification.
+
 ## v0.4.1 (development build) — Import ChatGPT ZIP or Markdown as a Zotero child note
 
 - Add right-click **Import ChatGPT ZIP / Markdown note** and a dedicated item-pane drag/drop target (does not intercept Zotero's native item list drag/drop).
