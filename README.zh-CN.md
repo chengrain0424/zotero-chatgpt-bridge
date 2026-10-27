@@ -114,3 +114,7 @@ beta.14 实机日志证实正文 PDF 完成文件选择，第二份 DOCX 的 `Ad
 ### Windows beta.16：连续上传成功后 Prompt 未自动粘贴
 
 beta.15 实际日志显示：两份附件均完成原生文件选择（约 7.7MB PDF + 19.6MB DOCX），第二份文件选择器 13:56:52 关闭，13:56:53 即检查 Prompt。旧脚本因 `editor not empty` 认定 ChatGPT 编辑框已有草稿，因此跳过粘贴，并**不是文件上传等待超时**。beta.16 重新按具体 `Edit` 控件 ID 或严格编辑框名称选择输入区，避免误把整个 ChatGPT 网页的 `Document` 文本当作草稿；识别已知附件名称造成的非空辅助文本（仅附件标签时允许继续，但不使用 Ctrl+A 覆盖任何内容）；在实际可验证的编辑框焦点中粘贴，再核对 Prompt 前缀。如果仍发现未知文字，则停止并将 Prompt 保留在剪贴板，供手动 Ctrl+V。不自动点击发送。日志 `PROMPT_EDITOR_FOUND`、`PROMPT_EDITOR_STATE`、`PROMPT_CHIP_ONLY_TEXT`、`PROMPT_FOCUS_VERIFIED`、`PROMPT_PASTE_VERIFIED` 可进一步定位 Edge 的实际控件语义。
+
+### Windows / macOS beta.17 默认英文 Zotero 文献阅读笔记 Prompt
+
+新 XPI 为 **Windows Edge/Chrome** 和 **macOS Safari** 共享同一份新默认 Prompt，要求 ChatGPT 基于真实读到的正文和 SI，生成英文 Markdown 结构化笔记；严格区分本文作者、被引用研究、AI 分析与留空的个人反思。包括 0–9 节、定量数据及图表出处、图像提取要求和 Better Notes 兼容性。修改仅限默认 Prompt，不影响用户已编辑的个性化版本；如果保存的内容**完全等于旧的中文默认模板**，视为旧默认并自动采用新版。可在 Zotero PDF 工具栏的 ⚙ 中使用“恢复默认”加载新版；不会自动发送消息。
