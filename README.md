@@ -86,3 +86,7 @@ Both macOS Safari and Windows Edge/Chrome share the complete 29,126-character la
 ### beta.21: cleaner figure captions, clearer calculation confidence, shorter tables
 
 Unified Windows/macOS default prompt (35,986 characters) adds reliable Markdown/MathJax figure-caption syntax, flags AI-calculated quantities as arithmetic checks versus partial balances/estimates/unverifiable claims, and discourages sprawling multi-page tables. It retains Obsidian-compatible $/$$ equations, cross-source consistency audits and inline original figures. The Zotero bridge does not render PDFs: page-break styling in an external Markdown-to-PDF converter must be configured separately. Saved unchanged beta.20 built-in prompts migrate to the new version, while genuine custom prompts remain unchanged. No auto-send.
+
+### v0.4.0 stable release (Windows + macOS)
+
+The maintained download is now **v0.4.0**, preserving the latest beta.21 feature set and shared 35,986-character research-note prompt. Only historical v0.3.0, historical v0.3.9 and current v0.4.0 are listed as GitHub Releases. Sequential main PDF/SI PDF and Word upload, Obsidian-compatible MathJax guidance, balance checks, and the 120,000-character Prompt editor are unchanged. The bridge never sends the message automatically.
