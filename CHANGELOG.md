@@ -1,3 +1,11 @@
+## v0.4.0-beta.17 — Shared English research note prompt (Windows + macOS)
+
+- Replace the built-in Chinese analysis prompt with the user's full English-language, 0–9 structured critical-reading Markdown note, including source attribution, quantitative evidence, SI navigation, image rules and intentionally blank personal reflections.
+- Use the same `ZCGBridge.defaultTemplate` on both Windows (Edge/Chrome) and macOS (Safari); all five metadata placeholders remain supported.
+- English metadata fallbacks are `Not recorded` / `None` to avoid Chinese in the requested output.
+- Preserve genuine saved custom prompts; automatically recognise the exact old Chinese built-in default even if previously saved in Zotero preferences.
+- Retain the user-tested Windows sequential PDF + DOCX SI upload and prompt paste workflow; no automatic Send. No change to Safari GUI automation.
+
 ## v0.3.9 — Restore v0.3.0 keyboard picker for each attachment (macOS Safari user-tested)
 
 - Per-file singleton staging keeps PDF+SI support with a full v0.3.0 `Go to Folder` → `Cmd+A` → `Return` chooser sequence.
