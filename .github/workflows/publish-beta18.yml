@@ -1,0 +1,82 @@
+name: Publish unified Zotero beta.18
+
+on:
+  push:
+    branches:
+      - feature/windows-edge-chrome
+
+jobs:
+  publish-beta18:
+    if: contains(github.event.head_commit.message, '[publish-beta18]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test complete Prompt and metadata substitution
+        run: |
+          node --check src/bridge.js
+          node --test tests/attachments.test.js
+          python3 tests/smoke.py
+      - name: Build and inspect unified Zotero XPI
+        run: |
+          python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
+          python3 - <<'PY'
+          import json, re, zipfile
+          from pathlib import Path
+          version = json.loads(Path('src/manifest.json').read_text())['version']
+          assert version == '0.4.0-beta.18', version
+          xpi = Path(f'dist/Zotero_to_ChatGPT_Direct_v{version}_Zotero10.xpi')
+          with zipfile.ZipFile(xpi) as z:
+              assert z.testzip() is None
+              assert all(name in z.namelist() for name in ('bridge.js','prefs.xhtml','safari_source.js','windows_source.js'))
+              source = z.read('bridge.js').decode('utf-8')
+              match = re.search(r'defaultTemplate: ("(?:\\.|[^"\\])*")', source)
+              assert match, 'Missing default prompt'
+              prompt = json.loads(match.group(1))
+              assert len(prompt) == 29126, len(prompt)
+              assert '## IV. Scientific tables: structure, readability, and presentation' in prompt
+              assert '## III. Scientific figure integration and image handling' in prompt
+              assert '## II. Mandatory cross-source consistency and quantitative verification' in prompt
+              assert '## 9. Reading Summary and Retrieval Information' in prompt
+              assert 'promptMaxLength: 50000' in source
+              assert b'maxlength="50000"' in z.read('prefs.xhtml')
+              print('PASS XPI: untruncated 29126-char prompt and 50000-char editor limit')
+          PY
+      - name: Publish beta18 GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag='v0.4.0-beta.18'
+          asset='dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.18_Zotero10.xpi'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists: $tag"
+            exit 0
+          fi
+          cat > /tmp/zotero-release-notes.md <<'NOTES'
+          # Zotero ChatGPT Bridge — unified Windows + macOS beta.18
+
+          The **entire 29,126-character latest English scientific reading-note prompt** is now built into the XPI for **Windows Edge/Chrome and macOS Safari**.
+
+          The default requires main-paper/SI cross-source consistency checks, quantitative verification, original research figures interleaved within the relevant discussion, 2–3-column scientific Markdown tables, and a Zotero-ready 0–9 research note with deliberately blank personal reflections.
+
+          - Increased built-in/editor custom Prompt limit **20,000 → 50,000 characters**.
+          - Added live character counter to the Zotero PDF-toolbar Prompt editor.
+          - Both built-in Prompt entry points use the same default.
+          - Saved unchanged older built-in defaults migrate automatically (including beta.17); genuinely customised prompts are preserved.
+          - Windows long-prompt paste logging now verifies the entire expected Prompt (not just the first 30 characters). If verification fails, the clipboard retains the Prompt for manual Ctrl+V.
+          - Existing PDF + SI PDF/Word sequential upload and macOS Safari automation are retained. No auto-send.
+
+          Install the attached XPI in Zotero 10, restart Zotero, and use **Restore default** in the Prompt editor to explicitly replace any personalised custom Prompt. Before sending to ChatGPT, verify attachments and inserted Prompt. The 50,000-character setting is a Zotero-side limit; actual browser/ChatGPT handling still requires real-device verification.
+
+          Test coverage includes the extracted XPI Prompt length, unchanged complete Prompt settings, standard multi-attachment staging, and Windows PowerShell checks.
+          NOTES
+          gh release create "$tag" "$asset" dist/SHA256SUMS \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Zotero ChatGPT Bridge v0.4.0-beta.18 (Windows + macOS)" \
+            --notes-file /tmp/zotero-release-notes.md
+          gh release view "$tag" --json url,assets
