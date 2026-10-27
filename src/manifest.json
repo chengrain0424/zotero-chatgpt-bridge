@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero to ChatGPT Chat (macOS Safari / Windows Chromium)",
-  "version": "0.4.0",
-  "description": "Zotero 10 ChatGPT Bridge for Windows Edge/Chrome and macOS Safari. Main PDF plus SI PDF/Word sequential upload, full English Zotero/Obsidian research-note prompt, no auto-send.",
+  "version": "0.4.1",
+  "description": "Zotero 10 ChatGPT Bridge: send main PDF/SI to ChatGPT and import ChatGPT ZIP/MD as Zotero child note using Better Notes, with safe ZIP validation, right-click import, and item-pane drop zone. No auto-send.",
   "author": "ChatGPT-assisted community build",
   "applications": {
     "zotero": {
