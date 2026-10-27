@@ -21,7 +21,7 @@ jobs:
       - name: Test build package
         run: |
           python3 scripts/build_release.py --owner dummy-owner --repo dummy-repo
-          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.12*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
+          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.13*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
           python3 -m json.tool dist/updates.json > /dev/null
 
       - name: Build experimental Windows installer
@@ -32,7 +32,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Zotero-Windows-Experimental-XPI
-          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.12_Zotero10.xpi
+          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.13_Zotero10.xpi
           if-no-files-found: error
           retention-days: 30
 
@@ -58,7 +58,7 @@ jobs:
           $ast = [System.Management.Automation.Language.Parser]::ParseFile('src/windows_upload.ps1', [ref]$tokens, [ref]$errors)
           if ($errors.Count) { throw 'Helper parser errors' }
           $functions = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object Name)
-          foreach ($name in @('Log-UploadCandidates','Get-VerifiedDialogFocus','Get-AddressBarFocus','Focus-AddressBar','Navigate-ToExactFolder','Read-NativeEditText','Test-NativePathEqual','Get-NativeFileNameFocus','Write-FilenameUsingNativeFocus','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Place-Prompt','Open-FileDialog')) {
+          foreach ($name in @('Prepare-UploadStaging','Log-UploadCandidates','Get-VerifiedDialogFocus','Get-AddressBarFocus','Focus-AddressBar','Navigate-ToExactFolder','Read-NativeEditText','Test-NativePathEqual','Get-NativeFileNameFocus','Write-FilenameUsingNativeFocus','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Place-Prompt','Open-FileDialog')) {
             if ($functions -notcontains $name) { throw "Missing helper function: $name" }
           }
       - name: Exercise native WM_GETTEXT on a Windows Edit HWND
@@ -85,6 +85,36 @@ jobs:
           }
           $form.Dispose()
           Write-Host 'PASS native Unicode Edit WM_GETTEXT'
+      - name: Verify single-file staging excludes Zotero reader metadata
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'zcg-one-file-fixture'
+          $source = Join-Path $root 'original'
+          $task = Join-Path $root 'task'
+          [IO.Directory]::CreateDirectory($source) | Out-Null
+          [IO.Directory]::CreateDirectory($task) | Out-Null
+          $pdf = Join-Path $source 'research-paper.pdf'
+          $metadata = Join-Path $source '.zotero-reader-state'
+          [IO.File]::WriteAllBytes($pdf, [Text.Encoding]::ASCII.GetBytes('%PDF-1.7 sample PDF'))
+          [IO.File]::WriteAllText($metadata, 'Zotero internal state, not a paper')
+          $upload = Join-Path $task 'upload_paths.txt'
+          $prompt = Join-Path $task 'prompt.txt'
+          $status = Join-Path $task 'status.log'
+          [IO.File]::WriteAllText($upload, $pdf)
+          [IO.File]::WriteAllText($prompt, 'test')
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -ExecutionPolicy Bypass -File 'src/windows_upload.ps1' -Browser edge -PromptPath $prompt -UploadListPath $upload -StatusPath $status -SelfTestStaging
+          if ($LASTEXITCODE -ne 0) { throw 'Staging helper exited with an error' }
+          $log = [IO.File]::ReadAllText($status)
+          if ($log -notmatch 'STAGING_SELFTEST_PASS' -or $log -notmatch 'STAGED_SINGLE_FILE' -or $log -match 'START_BROWSER') {
+            throw 'Staging helper validation failed'
+          }
+          $oneDir = Join-Path $task 'picker_staging\01'
+          $entries = @(Get-ChildItem -LiteralPath $oneDir -Force)
+          if ($entries.Count -ne 1 -or $entries[0].Name -ne 'research-paper.pdf') {
+            throw 'Staging directory contains an unexpected item'
+          }
+          if ([IO.File]::ReadAllText($entries[0].FullName) -ne '%PDF-1.7 sample PDF') { throw 'PDF stage content mismatch' }
+          Write-Host 'PASS single-file staging, hidden Zotero state excluded'
       - name: Run helper startup smoke without opening a browser
         shell: powershell
         run: |
