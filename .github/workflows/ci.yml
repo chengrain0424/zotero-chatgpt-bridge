@@ -61,6 +61,30 @@ jobs:
           foreach ($name in @('Log-UploadCandidates','Get-VerifiedDialogFocus','Get-AddressBarFocus','Focus-AddressBar','Navigate-ToExactFolder','Read-NativeEditText','Test-NativePathEqual','Get-NativeFileNameFocus','Write-FilenameUsingNativeFocus','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Place-Prompt','Open-FileDialog')) {
             if ($functions -notcontains $name) { throw "Missing helper function: $name" }
           }
+      - name: Exercise native WM_GETTEXT on a Windows Edit HWND
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          $source = [IO.File]::ReadAllText((Resolve-Path 'src/windows_upload.ps1'))
+          $match = [regex]::Match($source, "(?s)Add-Type -TypeDefinition @'\\r?\\n(.*?)\\r?\\n'@")
+          if (-not $match.Success) { throw 'Native Win32 declaration missing' }
+          Add-Type -TypeDefinition $match.Groups[1].Value
+          $form = New-Object System.Windows.Forms.Form
+          $textbox = New-Object System.Windows.Forms.TextBox
+          $expected = 'C:\Zotero\中文路径\paper.pdf'
+          $textbox.Text = $expected
+          $form.Controls.Add($textbox)
+          $handle = $textbox.Handle
+          $buffer = New-Object System.Text.StringBuilder 32768
+          $nativeResult = [UIntPtr]::Zero
+          $ok = [ZcgWin32]::SendMessageTimeoutGet($handle, 0x000D,
+            [UIntPtr]([uint32]$buffer.Capacity), $buffer, 0x0002, 1200,
+            [ref]$nativeResult)
+          if ($ok -eq [IntPtr]::Zero -or $buffer.ToString() -cne $expected) {
+            throw 'WM_GETTEXT did not read exact Unicode text from native edit'
+          }
+          $form.Dispose()
+          Write-Host 'PASS native Unicode Edit WM_GETTEXT'
       - name: Run helper startup smoke without opening a browser
         shell: powershell
         run: |
