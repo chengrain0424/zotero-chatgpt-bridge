@@ -5,6 +5,7 @@
 - Show live editor length and verify the **entire saved preference** equals what the user entered before closing the editor. Preserve genuine customised prompts; automatically migrate the exact built-in beta.18 default.
 - Keep Windows PDF/Word SI upload, full-prompt clipboard verification and macOS Safari automation unchanged. No auto-send.
 - The built-in default avoids copying extremely long Prompt messages from a chat UI; use **Restore default** and Save. Browser/ChatGPT itself may still impose independent input limits; validate on real devices.
+- GitHub Release packaging validates the exact 33,105-character built-in prompt and checks that no native HTML editor length attribute can silently clip pasted text.
 
 ## v0.4.0-beta.18 — Full prompt + expanded editor limit (Windows + macOS)
 
