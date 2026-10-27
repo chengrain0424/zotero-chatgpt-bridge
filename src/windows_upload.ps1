@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta21 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -994,7 +994,7 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window,
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta21 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
