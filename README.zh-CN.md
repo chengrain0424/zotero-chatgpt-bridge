@@ -100,3 +100,9 @@ beta.11 虽然记录 `FILENAME_NATIVE_READBACK_VERIFIED`，但用户实机截图
 ### Windows beta.13：错误上传 .zotero-reader-state 的防护
 
 真实 Edge 截图显示此前上传了 `.zotero-reader-state`，尽管程序执行了地址栏导航与文件名校验。这可能是原生文件对话框的高亮选中项与键入文件名冲突，也可能是 ChatGPT 输入区残留了之前的附件；单凭日志不能确定。beta.13 在浏览器启动前将每个受支持的 Zotero 附件**硬链接到仅含该附件的任务临时目录**（无法建立硬链接时复制），先校验正文必须为 PDF 且以 `%PDF-` 开头、文件扩展名在允许列表中。这样文件选择器里不会再出现 `.zotero-reader-state` 等 Zotero 内部文件。地址栏跳转到新建的单文件临时目录，核实路径，聚焦 `Edit#1148` 并通过 WM_GETTEXT 校验文件名，再从该焦点使用 Enter 提交，不再依赖可能选中高亮项的 Open UIA 调用。不会自动发送。临时目录中可能存在 PDF 硬链接或副本，需要时可手动删除任务目录。若 ChatGPT 输入框中此前已残留错误附件，必须手动移除；插件不会自动移除已添加的附件。
+
+### Windows beta.14：正文 PDF + 多份 SI PDF / Word 顺序上传
+
+已在 Windows 脚本中增加多附件逐个上传：首先上传 Zotero 选中的**正文 PDF**，再按筛选结果上传同一论文父条目下的 SI PDF、DOCX 和旧式 DOC 等受支持文件。每份附件始终使用独立、只有一个文件的暂存目录，避免混入 Zotero 的 `.zotero-reader-state`。每次 Windows 文件选择器关闭后，额外给予浏览器处理时间；上传下一份文件前**重新读取当前 ChatGPT 窗口与“Add files and more”按钮**，等待其变为可用（最多约 50 秒）。如果某份文件无法自动选择，会中止后续附件而不会点击发送。所有文件选择操作结束后才尝试填入 Prompt。文件选择器关闭不保证服务器已经完成上传，请手动核对输入框中的全部附件。
+
+插件提示设置中的“包含全部受支持的本地附件”默认开启；取消勾选则仅上传正文 PDF 与文件名/标题可识别的 SI。为避免漏掉以 `data_1.docx` 等普通名字保存的 SI，通常保留默认设置更实用。日志字段包括 `MULTI_UPLOAD_PLAN`、`STAGED_SINGLE_FILE`、`MULTI_PLUS_READY`、`FILE_START 2/3`、`ALL_PICKERS_CLOSED`。Windows 自动测试覆盖正文 PDF、SI PDF、SI DOCX 三文件单独暂存及排除 Zotero 阅读状态文件；真实 ChatGPT 多附件上传仍需实机确认。
