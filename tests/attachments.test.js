@@ -21,6 +21,7 @@ const files=[
   attachment(13,'experiment.xlsx'),
   attachment(14,'Supporting information.pdf'),
   attachment(15,'SI extra.docx'),
+  attachment(18,'SI methods.doc'),
   attachment(16,'web_snapshot.html'),
   attachment(17,'missing.docx',7,false),
 ];
@@ -50,8 +51,11 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'../src/bridge.js'),'utf8')+
 const bridge=sandbox.TEST_BRIDGE;
 (async()=>{
   const all=await bridge.attachmentsFor(files[0]);
-  assert.deepEqual(Array.from(all.ordered.map(f=>f.id)),[11,14,15,12,13]);
+  assert.deepEqual(Array.from(all.ordered.map(f=>f.id)),[11,14,15,18,12,13]);
   assert(all.ordered.some(f=>f.filename==='random_001.docx'));
+  assert(all.ordered.some(f=>f.filename==='SI extra.docx'));
+  assert(all.ordered.some(f=>f.filename==='SI methods.doc'));
+  assert(all.ordered[0].filename==='main.pdf');
   assert(all.ordered.some(f=>f.filename==='experiment.xlsx'));
   assert(!all.ordered.some(f=>f.id===99));
   assert(all.missing.includes('missing.docx'));
@@ -59,7 +63,7 @@ const bridge=sandbox.TEST_BRIDGE;
   assert.equal(bridge.getAttachmentMode(),'all');
   bridge.setAttachmentMode('si');
   const onlySI=await bridge.attachmentsFor(files[0]);
-  assert.deepEqual(Array.from(onlySI.ordered.map(f=>f.id)),[11,14,15]);
+  assert.deepEqual(Array.from(onlySI.ordered.map(f=>f.id)),[11,14,15,18]);
   assert(onlySI.ignored.some(s=>s.includes('random_001.docx')));
   assert(onlySI.ignored.some(s=>s.includes('experiment.xlsx')));
   console.log('PASS: all-supported mode includes arbitrary DOCX/XLSX; SI-only filters; other-parent excluded; missing tracked');

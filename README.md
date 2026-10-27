@@ -54,3 +54,23 @@ If no action occurs, inspect Zotero **Tools → Developer → Error Console** an
 ## Source and licensing
 
 This repository package contains no user PDFs, accounts, tokens or personal logs. Source code is released under the [MIT License](LICENSE).
+
+## Windows 10/11 + Zotero 10 (experimental)
+
+Windows support is under active development in the `feature/windows-edge-chrome` branch. It is **not yet verified on an actual Windows desktop**. Build the XPI from that branch before testing; the older v0.3.9 XPI is macOS-only.
+
+- Choose Edge (default) or Chrome in the PDF reader `⚙` panel. Sign in to ChatGPT in that browser first, and open a regular Chat window.
+- The plugin stages a prompt and an ordered list of **original absolute Zotero attachment paths** in the Windows temporary folder (`%TEMP%\\ZoteroChatGPTBridge\\run-*`). It does not copy attachment bytes or require symlink privileges.
+- The Windows PowerShell 5.1 helper tries UI Automation to open ChatGPT's attachment picker and choose each file. It may fail if Windows UI accessibility labels or ChatGPT's website change. It stops instead of choosing unrelated files; your full prompt is also placed on the clipboard as a manual Ctrl+V fallback.
+- Keep Zotero and your browser at the same privilege level (usually non-administrator). Check `status.log` in the run folder and manually verify every attachment. Only native picker closure is detected, **not successful ChatGPT upload or ingestion**. The helper never presses Send.
+- Windows PowerShell execution is invoked with process-local `-ExecutionPolicy Bypass` for the packaged helper. Review the source before use; no global execution-policy setting is changed.
+
+**Privacy:** All supported sibling attachments are selected by default. Do not use confidential or unpublished files until you have reviewed the selected files, their destination account and the applicable data policy.
+
+### Windows beta.4 upload-button diagnostics
+
+If ChatGPT opens but no attachment chooser appears, inspect the task's `status.log` for `UPLOAD_PLUS_*`, `UPLOAD_MENU_*`, and `UIA_CANDIDATE` entries. Sign into a regular Chat in Edge or Chrome first. The helper attempts prompt paste before selecting attachments; when the composer cannot be verified, the prompt stays on the clipboard for manual Ctrl+V. This is experimental: closing the picker does not prove file ingestion, and **Send is never clicked**. Redact paths/private titles before sharing logs.
+
+### Windows beta.14 multi-attachment upload
+
+Sequentially attaches the main PDF, followed by supported SI PDFs and Word files (DOCX/DOC) from the same Zotero item. Each file uses a separate one-file staging directory. On every subsequent file, the script rechecks the foreground ChatGPT window and reacquires the plus button, allowing it to become enabled after asynchronous uploads. Prompt insertion occurs after the file pickers. It never clicks Send. The file picker closing does not prove ingestion; confirm each attachment chip before submission. The native Windows CI fixture covers a main PDF, SI PDF, SI DOCX, and an excluded `.zotero-reader-state`.

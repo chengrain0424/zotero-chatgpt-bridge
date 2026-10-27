@@ -1,0 +1,21 @@
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml" style="padding:14px;max-width:760px;">
+  <groupbox>
+    <label style="font-size:18px;font-weight:bold;">Zotero ChatGPT Bridge · Windows Beta</label>
+    <description>这里的设置也可在 PDF 阅读器顶部的 ⚙ 修改；阅读器按钮无响应时请检查 Zotero 错误控制台。</description>
+    <html:label for="zcg-browser">Windows 浏览器</html:label>
+    <html:select id="zcg-browser" preference="extensions.zoteroChatGPTBridge.windowsBrowser" style="max-width:300px;">
+      <html:option value="edge">Microsoft Edge</html:option>
+      <html:option value="chrome">Google Chrome</html:option>
+    </html:select>
+    <html:label for="zcg-mode">附件筛选方式</html:label>
+    <html:select id="zcg-mode" preference="extensions.zoteroChatGPTBridge.attachmentMode" style="max-width:490px;">
+      <html:option value="all">当前文献条目下全部受支持的本地附件</html:option>
+      <html:option value="si">正文 PDF + 名称可识别的 SI</html:option>
+    </html:select>
+    <html:label for="zcg-template">自定义 Prompt（留空使用默认科研分析 Prompt）</html:label>
+    <html:textarea id="zcg-template" preference="extensions.zoteroChatGPTBridge.promptTemplate"
+                   rows="12" maxlength="20000" style="width:100%;min-height:230px;box-sizing:border-box;"/>
+    <description>占位符：{{title}}、{{doi}}、{{date}}、{{files}}、{{missing}}。修改后请先用公开论文测试，不会自动发送消息。</description>
+  </groupbox>
+</vbox>

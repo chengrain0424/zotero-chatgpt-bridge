@@ -10,9 +10,9 @@ import re
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.3.9"
+VERSION = json.loads((ROOT / "src" / "manifest.json").read_text(encoding="utf-8"))["version"]
 ASSET_NAME = f"Zotero_to_ChatGPT_Direct_v{VERSION}_Zotero10.xpi"
-FILES = ["manifest.json", "bootstrap.js", "bridge.js", "safari_source.js"]
+FILES = ["manifest.json", "bootstrap.js", "bridge.js", "safari_source.js", "windows_source.js", "prefs.xhtml", "icon.svg"]
 
 
 def build(owner, repo):
@@ -26,11 +26,16 @@ def build(owner, repo):
     # Inline the AppleScript as a JavaScript string, exactly as bootstrap expects.
     apple = (source / "Safari_自动上传.applescript").read_text(encoding="utf-8")
     js_source = "var SAFARI_SOURCE = " + json.dumps(apple, ensure_ascii=False) + ";\n"
+    windows = (source / "windows_upload.ps1").read_text(encoding="utf-8")
+    js_windows = "var WINDOWS_SOURCE = " + json.dumps(windows, ensure_ascii=False) + ";\n"
     generated = {
         "manifest.json": (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode(),
         "bootstrap.js": (source / "bootstrap.js").read_bytes(),
         "bridge.js": (source / "bridge.js").read_bytes(),
         "safari_source.js": js_source.encode("utf-8"),
+        "windows_source.js": js_windows.encode("utf-8"),
+        "prefs.xhtml": (source / "prefs.xhtml").read_bytes(),
+        "icon.svg": (source / "icon.svg").read_bytes(),
     }
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)

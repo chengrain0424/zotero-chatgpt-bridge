@@ -14,11 +14,171 @@ jobs:
         run: |
           node --check src/bootstrap.js
           node --check src/bridge.js
+          node --check src/bootstrap.js
           node --test tests/attachments.test.js
       - name: Static smoke test
         run: python3 tests/smoke.py
       - name: Test build package
         run: |
           python3 scripts/build_release.py --owner dummy-owner --repo dummy-repo
-          unzip -t dist/*.xpi
+          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.16*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
           python3 -m json.tool dist/updates.json > /dev/null
+
+      - name: Build experimental Windows installer
+        if: github.ref == 'refs/heads/feature/windows-edge-chrome' || github.head_ref == 'feature/windows-edge-chrome'
+        run: python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
+      - name: Upload Windows XPI installer
+        if: github.ref == 'refs/heads/feature/windows-edge-chrome' || github.head_ref == 'feature/windows-edge-chrome'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zotero-Windows-Experimental-XPI
+          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.16_Zotero10.xpi
+          if-no-files-found: error
+          retention-days: 30
+
+  windows-parser:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Windows helper in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile('src/windows_upload.ps1', [ref]$tokens, [ref]$errors)
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.ToString() }
+            exit 1
+          }
+      - name: Verify Windows helper functions present
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile('src/windows_upload.ps1', [ref]$tokens, [ref]$errors)
+          if ($errors.Count) { throw 'Helper parser errors' }
+          $functions = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object Name)
+          foreach ($name in @('Prepare-UploadStaging','Wait-ComposerPlus','Open-FileDialog','Log-UploadCandidates','Get-VerifiedDialogFocus','Get-AddressBarFocus','Focus-AddressBar','Navigate-ToExactFolder','Read-NativeEditText','Test-NativePathEqual','Get-NativeFileNameFocus','Write-FilenameUsingNativeFocus','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Find-ChatComposer','Test-ComposerHasOnlyAttachments','Place-Prompt','Open-FileDialog')) {
+            if ($functions -notcontains $name) { throw "Missing helper function: $name" }
+          }
+      - name: Exercise native WM_GETTEXT on a Windows Edit HWND
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          $source = [IO.File]::ReadAllText((Resolve-Path 'src/windows_upload.ps1'))
+          $match = [regex]::Match($source, "(?s)Add-Type -TypeDefinition @'\r?\n(.*?)\r?\n'@")
+          if (-not $match.Success) { throw 'Native Win32 declaration missing' }
+          Add-Type -TypeDefinition $match.Groups[1].Value
+          $form = New-Object System.Windows.Forms.Form
+          $textbox = New-Object System.Windows.Forms.TextBox
+          $expected = 'C:\Zotero\中文路径\paper.pdf'
+          $textbox.Text = $expected
+          $form.Controls.Add($textbox)
+          $handle = $textbox.Handle
+          $buffer = New-Object System.Text.StringBuilder 32768
+          $nativeResult = [UIntPtr]::Zero
+          $ok = [ZcgWin32]::SendMessageTimeoutGet($handle, 0x000D,
+            [UIntPtr]([uint32]$buffer.Capacity), $buffer, 0x0002, 1200,
+            [ref]$nativeResult)
+          if ($ok -eq [IntPtr]::Zero -or $buffer.ToString() -cne $expected) {
+            throw 'WM_GETTEXT did not read exact Unicode text from native edit'
+          }
+          $form.Dispose()
+          Write-Host 'PASS native Unicode Edit WM_GETTEXT'
+      - name: Verify single-file staging excludes Zotero reader metadata
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'zcg-one-file-fixture'
+          $source = Join-Path $root 'original'
+          $task = Join-Path $root 'task'
+          [IO.Directory]::CreateDirectory($source) | Out-Null
+          [IO.Directory]::CreateDirectory($task) | Out-Null
+          $pdf = Join-Path $source 'research-paper.pdf'
+          $metadata = Join-Path $source '.zotero-reader-state'
+          [IO.File]::WriteAllBytes($pdf, [Text.Encoding]::ASCII.GetBytes('%PDF-1.7 sample PDF'))
+          [IO.File]::WriteAllText($metadata, 'Zotero internal state, not a paper')
+          $upload = Join-Path $task 'upload_paths.txt'
+          $prompt = Join-Path $task 'prompt.txt'
+          $status = Join-Path $task 'status.log'
+          [IO.File]::WriteAllText($upload, $pdf)
+          [IO.File]::WriteAllText($prompt, 'test')
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -ExecutionPolicy Bypass -File 'src/windows_upload.ps1' -Browser edge -PromptPath $prompt -UploadListPath $upload -StatusPath $status -SelfTestStaging
+          if ($LASTEXITCODE -ne 0) { throw 'Staging helper exited with an error' }
+          $log = [IO.File]::ReadAllText($status)
+          if ($log -notmatch 'STAGING_SELFTEST_PASS' -or $log -notmatch 'STAGED_SINGLE_FILE' -or $log -match 'START_BROWSER') {
+            throw 'Staging helper validation failed'
+          }
+          $oneDir = Join-Path $task 'picker_staging\01'
+          $entries = @(Get-ChildItem -LiteralPath $oneDir -Force)
+          if ($entries.Count -ne 1 -or $entries[0].Name -ne 'research-paper.pdf') {
+            throw 'Staging directory contains an unexpected item'
+          }
+          if ([IO.File]::ReadAllText($entries[0].FullName) -ne '%PDF-1.7 sample PDF') { throw 'PDF stage content mismatch' }
+          Write-Host 'PASS single-file staging, hidden Zotero state excluded'
+      - name: Test three-file main PDF plus PDF and Word SI staging
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'zcg-multi-fixture'
+          $original = Join-Path $root 'original'
+          $task = Join-Path $root 'task'
+          [IO.Directory]::CreateDirectory($original) | Out-Null
+          [IO.Directory]::CreateDirectory($task) | Out-Null
+          $paper = Join-Path $original '正文论文.pdf'
+          $siPdf = Join-Path $original 'Supporting Information.pdf'
+          $siDocx = Join-Path $original 'SI experiment.docx'
+          $readerState = Join-Path $original '.zotero-reader-state'
+          [IO.File]::WriteAllBytes($paper, [Text.Encoding]::ASCII.GetBytes('%PDF-1.7 main'))
+          [IO.File]::WriteAllBytes($siPdf, [Text.Encoding]::ASCII.GetBytes('%PDF-1.7 SI'))
+          [IO.File]::WriteAllBytes($siDocx, [byte[]](0x50,0x4B,0x03,0x04,0x01,0x02))
+          [IO.File]::WriteAllText($readerState, 'Zotero internal file not to upload')
+          $upload = Join-Path $task 'upload_paths.txt'
+          $prompt = Join-Path $task 'prompt.txt'
+          $status = Join-Path $task 'status.log'
+          [IO.File]::WriteAllLines($upload, [string[]]@($paper,$siPdf,$siDocx), [Text.Encoding]::UTF8)
+          [IO.File]::WriteAllText($prompt, 'CI multi attachment prompt')
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -ExecutionPolicy Bypass -File 'src/windows_upload.ps1' -Browser edge -PromptPath $prompt -UploadListPath $upload -StatusPath $status -SelfTestStaging
+          if ($LASTEXITCODE -ne 0) { throw 'Multi-stage helper failed' }
+          $log = [IO.File]::ReadAllText($status)
+          if ($log -notmatch 'STAGING_SELFTEST_PASS') { throw 'Missing multi-stage self-test PASS' }
+          $expected = @('正文论文.pdf','Supporting Information.pdf','SI experiment.docx')
+          for ($i=1; $i -le 3; $i++) {
+            $dir = Join-Path (Join-Path $task 'picker_staging') ('{0:D2}' -f $i)
+            $entries = @(Get-ChildItem -LiteralPath $dir -Force)
+            if ($entries.Count -ne 1 -or $entries[0].Name -cne $expected[$i-1]) {
+              throw "Stage $i has wrong attachment or contains Zotero state"
+            }
+            if ($log -notmatch "STAGED_SINGLE_FILE index=$i ") { throw "Missing stage log $i" }
+          }
+          $isolated = @(Get-ChildItem -LiteralPath (Join-Path $task 'picker_staging') -Directory)
+          if ($isolated.Count -ne 3) { throw 'Wrong number of independent picker directories' }
+          Write-Host 'PASS main PDF + SI PDF + SI DOCX, separate single-file picker directories'
+      - name: Check prompt classifier does not confuse attachment chips with drafts
+        shell: powershell
+        run: |
+          $source = [IO.File]::ReadAllText((Resolve-Path 'src/windows_upload.ps1'))
+          $start = $source.IndexOf('function Test-ComposerHasOnlyAttachments(')
+          $end = $source.IndexOf('function Place-Prompt(', $start)
+          if ($start -lt 0 -or $end -le $start) { throw 'Prompt classifier not found' }
+          . ([scriptblock]::Create($source.Substring($start, $end-$start)))
+          $files = [string[]]@('C:\Zotero\正文论文.pdf','C:\Zotero\SI experiment.docx')
+          if (-not (Test-ComposerHasOnlyAttachments '' $files)) { throw 'Empty input should be safe' }
+          if (-not (Test-ComposerHasOnlyAttachments 'Ask ChatGPT' $files)) { throw 'Placeholder should be safe' }
+          if (-not (Test-ComposerHasOnlyAttachments '正文论文.pdf; SI experiment.docx' $files)) { throw 'Attachment chips not identified' }
+          if (Test-ComposerHasOnlyAttachments 'A real user draft' $files) { throw 'Draft would be overwritten' }
+          if (Test-ComposerHasOnlyAttachments '正文论文.pdf and a user draft' $files) { throw 'Mixed attachment/draft wrongly accepted' }
+          Write-Host 'PASS composer text classifier: chip labels allowed, drafts protected'
+      - name: Run helper startup smoke without opening a browser
+        shell: powershell
+        run: |
+          $status = Join-Path $env:RUNNER_TEMP 'zcg_status.log'
+          $prompt = Join-Path $env:RUNNER_TEMP 'zcg_prompt.txt'
+          $upload = Join-Path $env:RUNNER_TEMP 'zcg_empty_upload_list.txt'
+          [IO.File]::WriteAllText($prompt, 'CI test prompt')
+          [IO.File]::WriteAllText($upload, '')
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -ExecutionPolicy Bypass -File 'src/windows_upload.ps1' -Browser edge -PromptPath $prompt -UploadListPath $upload -StatusPath $status
+          $output = [IO.File]::ReadAllText($status)
+          Write-Host $output
+          if ($output -notmatch 'POWERSHELL_ENTERED' -or $output -notmatch 'WIN_SCRIPT_BUILD') { throw 'PowerShell helper did not complete initialization' }
+          if ($output -match 'INITIALIZATION_ERROR' -or $output -match 'START_BROWSER') { throw 'Unexpected PowerShell startup behavior' }
+          # Empty fixture deliberately makes helper exit 1 before opening a browser.
+          $global:LASTEXITCODE = 0
