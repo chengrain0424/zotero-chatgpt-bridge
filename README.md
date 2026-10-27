@@ -78,3 +78,7 @@ Sequentially attaches the main PDF, followed by supported SI PDFs and Word files
 ### Unified Windows/macOS beta.17 default research-note prompt
 
 The built-in prompt now requests a detailed, fully English Markdown Zotero reading note with strict provenance labels, evidence appraisal, numerical results, SI navigation, cautious figure handling and deliberately unanswered personal reflections. One shared template serves Windows Edge/Chrome and macOS Safari. Saved genuinely customised prompts remain unchanged; the exact previously saved Chinese built-in default is recognised and upgraded. In the Zotero prompt editor, use **Restore default** if you want to discard a customised prompt and load the new one. No automatic Send.
+
+### v0.4.0-beta.18: full prompt and 50,000-character editor
+
+Both macOS Safari and Windows Edge/Chrome share the complete 29,126-character latest English Markdown research-note Prompt, including cross-source consistency checks, inline original figures, concise scientific tables, and the 0–9 reading-note structure. Both Zotero prompt inputs now accept 50,000 characters; the reader's prompt editor displays a live counter. Saved old built-in defaults (Chinese or beta.17 English) migrate to the new default, while genuinely customised prompts remain unchanged. Windows paste diagnostic requires the full expected prompt instead of only the first 30 characters; no auto-send.
