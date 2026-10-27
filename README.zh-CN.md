@@ -134,3 +134,7 @@ beta.15 实际日志显示：两份附件均完成原生文件选择（约 7.7MB
 ### Windows / macOS beta.21：优化阅读笔记默认 Prompt 的公式图注、验证状态和长表格
 
 共享英文默认 Prompt（**35,986 字符**）新增：图注不能随意嵌套 Markdown 斜体与数学公式、表面吸附物种星号须防止被解释为加粗/斜体；计算应区分 **Arithmetic checked / Partial balance / Order-of-magnitude estimate / Not verifiable from available sources**；避免跨页冗长 Markdown 表格，仍使用正文穿插原图、三列表格导航。请注意，插件只负责将论文附件与 Prompt 送到 ChatGPT，**并不负责生成 Markdown 转 PDF 的页面排版**，无法直接修复另一个应用的 PDF 分页引擎。beta.20 的 Windows 启动修复、SI 连续上传、全文粘贴和 120,000 字符上限均保留。安装后可在 ⚙ 用「恢复默认」启用新版模板，已保存的 beta.20 原始默认会自动升级，自定义 Prompt 不覆盖。
+
+### v0.4.0 正式版（Windows + macOS）
+
+整理 Release，只保留 **v0.3.0 / v0.3.9 / v0.4.0** 三个版本。v0.4.0 使用最终 beta.21 的完整功能与 35,986 字符科研阅读 Prompt，修复 Windows 原生文件选择器、正文和 SI PDF/DOCX 连续上传、Obsidian MathJax 兼容公式指令、物料／能量衡算、紧凑 Markdown 表格与图文混排；最多可编辑 120,000 字符。仍不自动发送。在 Zotero 10 中安装新版 XPI 后完全重启，再于 ⚙ 选择「恢复默认」启用新模板。
