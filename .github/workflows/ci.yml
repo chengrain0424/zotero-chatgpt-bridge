@@ -21,7 +21,7 @@ jobs:
       - name: Test build package
         run: |
           python3 scripts/build_release.py --owner dummy-owner --repo dummy-repo
-          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.10*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
+          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.11*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
           python3 -m json.tool dist/updates.json > /dev/null
 
       - name: Build experimental Windows installer
@@ -32,7 +32,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Zotero-Windows-Experimental-XPI
-          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.10_Zotero10.xpi
+          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.11_Zotero10.xpi
           if-no-files-found: error
           retention-days: 30
 
@@ -58,7 +58,7 @@ jobs:
           $ast = [System.Management.Automation.Language.Parser]::ParseFile('src/windows_upload.ps1', [ref]$tokens, [ref]$errors)
           if ($errors.Count) { throw 'Helper parser errors' }
           $functions = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object Name)
-          foreach ($name in @('Log-UploadCandidates','Log-FilenameCandidates','Find-FilenameControl','Test-VerifiedFileNameFocus','Write-FilenameWithKeyboard','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Place-Prompt','Open-FileDialog')) {
+          foreach ($name in @('Log-UploadCandidates','Log-FilenameCandidates','Get-NativeFileNameFocus','Write-FilenameUsingNativeFocus','Find-FilenameControl','Test-VerifiedFileNameFocus','Write-FilenameWithKeyboard','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Place-Prompt','Open-FileDialog')) {
             if ($functions -notcontains $name) { throw "Missing helper function: $name" }
           }
       - name: Run helper startup smoke without opening a browser
