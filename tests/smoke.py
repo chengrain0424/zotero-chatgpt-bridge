@@ -4,7 +4,7 @@ import json, re, tempfile, os
 ROOT=Path(__file__).resolve().parents[1]
 src=ROOT/'src'
 manifest=json.loads((src/'manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='0.4.0-beta.14'
+assert manifest['version']=='0.4.0-beta.15'
 win=(src/'windows_upload.ps1').read_text(encoding='utf-8')
 assert 'NO_AUTO_SEND' in win
 assert 'Select-ExactFile' in win
@@ -46,6 +46,20 @@ assert 'UPLOAD_PLUS_STATE enabled=' in win
 assert 'UPLOAD_FIRST_PROMPT_CLIPBOARD_READY' in win
 assert 'MULTI_PLUS_TIMEOUT item=' in win
 assert 'function Wait-ComposerPlus(' in win
+assert 'RawViewWalker' in win
+assert 'UIA_MOUSE_TARGET_MISMATCH no-verified-point' in win
+assert 'UPLOAD_PLUS_HIT_RETRY item=' in win
+assert 'UPLOAD_PLUS_HIT_TIMEOUT item=' in win
+assert 'PROMPT_MOUSE_FOCUS_ATTEMPT' in win
+assert 'PROMPT_FOCUS_VERIFIED' in win
+assert 'PROMPT_ALREADY_PRESENT not duplicating' in win
+assert 'PROMPT_CLIPBOARD_READY composer focus unverified' in win
+assert 'Click-UIA-Verified $editor' in win
+assert 'if(Click-UIA-Verified $plus)' in win
+assert 'if(-not $focusOK)' in win
+assert win.index("Log 'PROMPT_FOCUS_VERIFIED'") < win.index("SendWait('^v')", win.index('function Place-Prompt'))
+assert 'UPLOAD_PLUS_INVOKE_FAILED item=' not in win
+
 assert 'MULTI_PLUS_READY item=' in win
 assert 'MULTI_UPLOAD_PLAN count=' in win
 assert 'MULTI_NEXT_WAIT after=' in win
@@ -69,7 +83,7 @@ assert 'ControlType]::Document' in win
 assert 'PROMPT_PASTE_VERIFIED' in win
 assert win.index('for ($i=0; $i -lt $paths.Count; $i++)') < win.index('Place-Prompt $foreground.Element $prompt')
 assert 'SetForegroundWindow' in win
-assert 'WIN_SCRIPT_BUILD v0.4.0beta14 uia-20261027' in win
+assert 'WIN_SCRIPT_BUILD v0.4.0beta15 uia-20261027' in win
 assert 'prepareWindows(item)' in (src/'bridge.js').read_text(encoding='utf-8')
 assert manifest['applications']['zotero']['id']=='zotero-chatgpt-safari@local.bridge'
 assert manifest['applications']['zotero']['strict_max_version']=='10.0.*'
