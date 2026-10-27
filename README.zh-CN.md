@@ -126,3 +126,7 @@ beta.15 实际日志显示：两份附件均完成原生文件选择（约 7.7MB
 ### Windows/macOS beta.19：解决长 Prompt 粘贴截断
 
 新版本不再让 HTML `maxlength` 属性在编辑时静默裁剪文本。Zotero PDF 工具栏 ⚙ 的 Prompt 编辑器在粘贴前读取剪贴板全文并一次插入，保存前验证写入 Zotero 首选项后的完整文本，显示实时字符数；上限提高至 **120,000 字符**。偏好设置中的另一编辑入口也取消了原生长度裁剪；建议通过阅读器 ⚙ 编辑以获得完整校验。**33,105 字符**新默认 Prompt 内置正文+SI交叉核查、必要的物料及能量衡算、Obsidian MathJax `$...` / `$$...` 格式、图文混排和紧凑表格。安装后选择 **恢复默认→保存**，不用从聊天中复制长提示词。旧的 beta.18 原版默认会被识别并升级，真正个性化编辑的 Prompt 不覆盖。
+
+### Windows beta.20：修复启动前误报 Windows automation script missing
+
+已查明 beta.19 的 XPI 打包了正确的 `windows_source.js`，但 `bridge.js` 仍然写死了 beta.17 的标记，导致每次 Windows 启动在创建 `run-` 文件夹前就失败。beta.20 不再使用固定的旧版本标记来判断脚本是否存在，而是读取真实 PowerShell 脚本的版本信息并验证关键入口函数；真实辅助脚本、运行目录创建和日志保存均已纳入自动化回归测试。保留所有长 Prompt 与 PDF/SI 上传功能。请安装新版 XPI 并**完整退出后重启 Zotero**。
