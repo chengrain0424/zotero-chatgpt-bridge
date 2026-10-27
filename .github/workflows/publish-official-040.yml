@@ -1,0 +1,54 @@
+name: Publish official v0.4.0 XPI
+
+on:
+  push:
+    branches:
+      - feature/windows-edge-chrome
+
+jobs:
+  publish:
+    if: contains(github.event.head_commit.message, '[publish-official-040]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate plugin and build stable package
+        run: |
+          set -euo pipefail
+          node --check src/bridge.js
+          node --test tests/attachments.test.js
+          python3 tests/smoke.py
+          python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,zipfile,re
+          x=Path('dist/Zotero_to_ChatGPT_Direct_v0.4.0_Zotero10.xpi')
+          with zipfile.ZipFile(x) as z:
+              assert z.testzip() is None
+              assert json.loads(z.read('manifest.json'))['version']=='0.4.0'
+              src=z.read('bridge.js').decode('utf-8')
+              prompt=json.loads(re.search(r'defaultTemplate: ("(?:\\.|[^"\\])*")',src).group(1))
+              assert len(prompt)==35986
+              windows=json.loads(z.read('windows_source.js').decode().removeprefix('var WINDOWS_SOURCE = ').rstrip(';\n'))
+              assert 'WIN_SCRIPT_BUILD v0.4.0 uia-20261027' in windows
+              assert 'getWindowsHelperBuild() {' in src
+          PY
+      - name: Publish official stable-numbered Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.4.0 >/dev/null 2>&1; then
+            echo 'v0.4.0 already published'
+            exit 0
+          fi
+          gh release create v0.4.0 \
+            dist/Zotero_to_ChatGPT_Direct_v0.4.0_Zotero10.xpi \
+            dist/SHA256SUMS \
+            --target "$GITHUB_SHA" --latest \
+            --title 'Zotero ChatGPT Bridge v0.4.0 (Windows + macOS)' \
+            --notes 'Official v0.4.0: latest research note template, Windows Edge/Chrome and macOS Safari, sequential main PDF + SI attachments, 120k-character custom prompt editor and no auto-send. See CHANGELOG.md for details.'
