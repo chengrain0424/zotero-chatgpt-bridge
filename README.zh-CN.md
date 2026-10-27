@@ -88,3 +88,11 @@ beta.9 的实际日志识别到文件选择器，但 `AutomationId 1148` 对应 
 ### Windows beta.11：针对文件名输入框 UIA 只暴露 Pane 的情况
 
 beta.10 的实机日志确认文件对话框中 1148 节点全部为 `Pane`，没有 `Edit`。beta.11 使用 Windows 原生窗口句柄检查焦点。通过 `Alt+N` 尝试聚焦“文件名”，随后验证当前焦点的 Win32 父窗口链中包含对话框的 1148 控件，且确实属于已验证的文件选择窗口。只有验证成功才粘贴附件的绝对路径并剪贴板读回；如验证失败，仅记录 `FILENAME_WIN32_FOCUS` 而不尝试输入。这个方法与 Windows 界面语言有关，属于实验性解决方案。不会自动发送 ChatGPT 消息。
+
+### Windows beta.12：通过地址栏进入 PDF 文件夹，独立校验文件名
+
+beta.11 虽然记录 `FILENAME_NATIVE_READBACK_VERIFIED`，但用户实机截图显示原生文件选择器仍停留在 `Script > ICONS`，甚至上传了图片。原因是旧“读取校验”使用 Ctrl+C 读剪贴板，复制失败时剪贴板可能保留了原先路径，导致假阳性。**beta.12 已删除这套剪贴板校验**。
+
+新版上传依次执行：①解析并检查 Zotero 附件文件夹及文件名；②在已验证的原生文件对话框中，通过 Ctrl+L/Alt+D 聚焦地址栏；③粘贴目标文件夹绝对路径，使用 Win32 `WM_GETTEXT` 直接读取地址栏内真实文字并核对；④回车导航到目录，再重新聚焦地址栏并核实当前路径；⑤Alt+N 聚焦原生文件名编辑框 `Edit#1148`，仅输入文件名，用 `WM_GETTEXT` 验证原生编辑框内文本；⑥全部通过后才点击 Open。校验失败立即停止，不会误点导致上传其他文件。仍不会自动发送 Prompt。
+
+重要诊断字段：`ADDRESS_FOCUS`、`ADDRESS_PASTE_VERIFIED`、`FOLDER_NAVIGATED_VERIFIED`、`FILENAME_NATIVE_TEXT_VERIFIED`。**Windows 自动化构建检查不等于实际浏览器上传成功**；请先用公开论文测试并确认附件卡片。
