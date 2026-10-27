@@ -347,7 +347,7 @@ var ZCGBridge = {
   },
   async prepareWindows(item) {
     const data=await this.attachmentsFor(item);
-    if (typeof this.windowsScriptSource!=="string" || !this.windowsScriptSource.includes("WIN_SCRIPT_BUILD v0.4.0beta16 uia-20261027"))
+    if (typeof this.windowsScriptSource!=="string" || !this.windowsScriptSource.includes("WIN_SCRIPT_BUILD v0.4.0beta17 uia-20261027"))
       throw new Error("Windows automation script missing from installed package");
     const stamp=new Date().toISOString().replace(/[^0-9]/g,"").slice(0,14);
     const nonce=Math.random().toString(36).slice(2,10);
@@ -370,7 +370,7 @@ var ZCGBridge = {
     await IOUtils.writeUTF8(uploadListPath,files.map(f=>f.originalPath).join("\n")+"\n");
     // Windows PowerShell 5.1 expects a BOM for a UTF-8 script with Chinese text.
     await IOUtils.writeUTF8(scriptPath,"\uFEFF"+this.windowsScriptSource.replace(/^\uFEFF/,""));
-    await IOUtils.writeUTF8(statusPath,"BRIDGE_BUILD v0.4.0beta16 windows\nSCRIPT_SAVED_UTF8_BOM\n");
+    await IOUtils.writeUTF8(statusPath,"BRIDGE_BUILD v0.4.0beta17 windows\nSCRIPT_SAVED_UTF8_BOM\n");
     await IOUtils.writeUTF8(PathUtils.join(runDir,"selection.json"),
       JSON.stringify({itemID:data.record.id,title:data.title,files,
         missing:data.missing,ignored:data.ignored,generatedAt:new Date().toISOString()},null,2));
