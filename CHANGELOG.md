@@ -1,3 +1,10 @@
+## v0.4.0 — Consolidated stable-numbered Release (Windows + macOS)
+
+- Promote the verified beta.21 feature set to the single maintained **v0.4.0** XPI with no automatic sending. Preserve the full 35,986-character evidence-based research note, cross-source consistency checks, preliminary material and energy balances, Obsidian MathJax, figure placement and compact tables.
+- Correct Windows stable build-marker matching and retain the PDF/Word SI multi-upload and prompt-paste regression tests.
+- Retain only three GitHub Releases: historical original **v0.3.0** and **v0.3.9** XPI binaries, and current **v0.4.0**; remove superseded beta release entries without deleting historical Git tags.
+- Prompt editor limit remains 120,000 characters and existing customised templates are preserved.
+
 ## v0.4.0-beta.21 — Refined research-note layout and verification-status default (Windows + macOS)
 
 - Update the shared, complete **35,986-character** research-note Prompt: figures remain integrated in Sections 1–6, with explicit warnings against mixing whole-caption Markdown emphasis and LaTeX or accidentally interpreting adsorbed-site asterisks as Markdown syntax.
