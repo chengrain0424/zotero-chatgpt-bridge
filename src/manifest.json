@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero to ChatGPT Chat (macOS Safari / Windows Chromium)",
-  "version": "0.4.0-beta.17",
-  "description": "Unified Windows Edge/Chrome and macOS Safari Zotero-to-ChatGPT bridge; detailed English critical-reading Markdown note default; multiple PDF/Word attachments; never auto-send.",
+  "version": "0.4.0-beta.18",
+  "description": "Windows Edge/Chrome + macOS Safari: full 29,126-character English scientific reading note prompt, 50k prompt limit, cross-source verification, integrated figures and compact tables. No auto-send.",
   "author": "ChatGPT-assisted community build",
   "applications": {
     "zotero": {
