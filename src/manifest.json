@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero to ChatGPT Chat (macOS Safari / Windows Chromium)",
-  "version": "0.4.0-beta.10",
-  "description": "Experimental Windows Edge/Chrome: resolves editable child of native file dialog Pane #1148 and verifies safe focus before file path entry; no auto-send.",
+  "version": "0.4.0-beta.11",
+  "description": "Windows Edge/Chrome experimental: verify native Win32 file name focus by HWND ancestry when UIA exposes Pane only; no auto-send.",
   "author": "ChatGPT-assisted community build",
   "applications": {
     "zotero": {
