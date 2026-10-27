@@ -5,6 +5,7 @@
 - English metadata fallbacks are `Not recorded` / `None` to avoid Chinese in the requested output.
 - Preserve genuine saved custom prompts; automatically recognise the exact old Chinese built-in default even if previously saved in Zotero preferences.
 - Retain the user-tested Windows sequential PDF + DOCX SI upload and prompt paste workflow; no automatic Send. No change to Safari GUI automation.
+- Distribute one XPI with both Safari and Windows automation; the new long-form English note prompt is the default for either platform.
 
 ## v0.3.9 — Restore v0.3.0 keyboard picker for each attachment (macOS Safari user-tested)
 
