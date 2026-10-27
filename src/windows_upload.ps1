@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta13 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta14 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -430,63 +430,101 @@ function Log-PlusButtonState([System.Windows.Automation.AutomationElement]$Windo
     } catch { Log ('UPLOAD_PLUS_STATE_ERROR ' + $_.Exception.GetType().Name) }
 }
 
-function Open-FileDialog([System.Windows.Automation.AutomationElement]$ChatWindow) {
-    $buttons = @([System.Windows.Automation.ControlType]::Button,
-                 [System.Windows.Automation.ControlType]::MenuItem)
-    $plusLabels = '(?i)(composer-plus-btn|Add files and more|Add photos and files|Add photos & files|Attach files|添加文件|添加照片|添加附件|附件|Add photos|Upload files)'
-    $uploadLabels = '(?i)(Upload files|Upload from computer|Add photos.{0,8}files|从电脑上传|上传文件|添加照片和文件)'
-    # A freshly loaded composer may briefly disable its attach button.
-    # Never click disabled elements: wait for an interactive one, with diagnostics.
-    $plus = $null
-    for ($attempt=0; $attempt -lt 12; $attempt++) {
-        $plus = Find-UIA $ChatWindow $buttons $plusLabels
-        if ($null -ne $plus) { break }
-        if ($attempt -eq 0 -or $attempt -eq 5) { Log-PlusButtonState $ChatWindow }
+function Wait-ComposerPlus([int]$ItemIndex,[int]$Total) {
+    # After the first file, ChatGPT can rerender the composer and temporarily
+    # disable Add files while it prepares the attachment. Resolve a NEW UIA
+    # root on every poll; never reuse an element from before a previous picker.
+    $types=@([System.Windows.Automation.ControlType]::Button,
+             [System.Windows.Automation.ControlType]::MenuItem)
+    $plusLabels='(?i)(composer-plus-btn|Add files and more|Add photos and files|Add photos & files|Attach files|添加文件|添加照片|添加附件|附件|Add photos|Upload files)'
+    $limit=if($ItemIndex -gt 1) { 50 } else { 20 }
+    $deadline=(Get-Date).AddSeconds($limit)
+    $poll=0
+    do {
+        $fg=Get-ForegroundBrowser
+        if($null -eq $fg -or $fg.Handle -ne $script:ChatWindowHandle) {
+            Log ('MULTI_WAIT_WRONG_WINDOW item=' + $ItemIndex)
+            return $null
+        }
+        try {
+            if($fg.Element.Current.Name -notmatch '(?i)ChatGPT') {
+                Log ('MULTI_WAIT_NOT_CHAT item=' + $ItemIndex)
+                return $null
+            }
+            $plus=Find-UIA $fg.Element $types $plusLabels
+            if($null -ne $plus) {
+                Log ('MULTI_PLUS_READY item=' + $ItemIndex + '/' + $Total +
+                    ' polls=' + $poll)
+                return [pscustomobject]@{Root=$fg.Element; Button=$plus}
+            }
+            if($poll -eq 0 -or $poll % 10 -eq 0) {
+                Log ('MULTI_PLUS_WAIT item=' + $ItemIndex + '/' + $Total +
+                    ' polls=' + $poll)
+                Log-PlusButtonState $fg.Element
+            }
+        } catch {
+            Log ('MULTI_PLUS_POLL_RETRY ' + $_.Exception.GetType().Name)
+        }
+        $poll++
         Start-Sleep -Milliseconds 500
-    }
-    if ($null -eq $plus) {
-        Log 'UPLOAD_PLUS_UNAVAILABLE_AFTER_RETRIES'
-        Log-PlusButtonState $ChatWindow
-        Log-UploadCandidates $ChatWindow
-        return $null
-    }
-    Log ('UPLOAD_PLUS_FOUND name=' + [string]$plus.Current.Name)
-    if (-not (Invoke-UIA $plus)) {
-        Log 'UPLOAD_PLUS_INVOKE_FAILED'
-        Log-UploadCandidates $ChatWindow
-        return $null
-    }
-    Log 'UPLOAD_PLUS_CLICKED'
-    $dialog = Wait-FileDialog 2
-    if ($null -ne $dialog) { Log 'PICKER_OPEN_DIRECT'; return $dialog }
+    } while ((Get-Date) -lt $deadline)
+    Log ('MULTI_PLUS_TIMEOUT item=' + $ItemIndex + '/' + $Total)
+    return $null
+}
 
-    $menu=Find-UIA $ChatWindow $buttons $uploadLabels
-    if ($null -eq $menu) {
-        Log 'UPLOAD_MENU_NOT_FOUND'
-        Log-UploadCandidates $ChatWindow
+function Open-FileDialog([int]$ItemIndex,[int]$Total) {
+    $types=@([System.Windows.Automation.ControlType]::Button,
+             [System.Windows.Automation.ControlType]::MenuItem)
+    $uploadLabels='(?i)(Upload files|Upload from computer|Add photos.{0,8}files|从电脑上传|上传文件|添加照片和文件)'
+    $ready=Wait-ComposerPlus $ItemIndex $Total
+    if($null -eq $ready) {
+        Log-UploadCandidates ([System.Windows.Automation.AutomationElement]::FromHandle($script:ChatWindowHandle))
         return $null
     }
-    Log ('UPLOAD_MENU_FOUND name=' + [string]$menu.Current.Name)
-    # An InvokePattern action on Chromium's HTML file-input menu entry can
-    # dismiss the menu without providing the browser a trusted user gesture.
-    # Use one hit-tested physical mouse click, rather than invoking the
-    # accessibility action and then retrying after the menu closes.
+    $plus=$ready.Button
+    Log ('UPLOAD_PLUS_FOUND item=' + $ItemIndex + ' name=' + [string]$plus.Current.Name)
+    if(-not (Invoke-UIA $plus)) {
+        Log ('UPLOAD_PLUS_INVOKE_FAILED item=' + $ItemIndex)
+        return $null
+    }
+    Log ('UPLOAD_PLUS_CLICKED item=' + $ItemIndex)
+    $dialog=Wait-FileDialog 2
+    if($null -ne $dialog) { Log 'PICKER_OPEN_DIRECT'; return $dialog }
+
+    # Requery the browser tree after the menu opens. The stale composer root
+    # can no longer be trusted after selecting the previous attachment.
+    $window=Get-ForegroundBrowser
+    if($null -eq $window -or $window.Handle -ne $script:ChatWindowHandle) {
+        Log ('UPLOAD_MENU_WRONG_WINDOW item=' + $ItemIndex)
+        return $null
+    }
+    $menu=$null
+    for($attempt=0; $attempt -lt 10; $attempt++) {
+        $root=[System.Windows.Automation.AutomationElement]::FromHandle($script:ChatWindowHandle)
+        $menu=Find-UIA $root $types $uploadLabels
+        if($null -ne $menu) { break }
+        Start-Sleep -Milliseconds 200
+    }
+    if($null -eq $menu) {
+        Log ('UPLOAD_MENU_NOT_FOUND item=' + $ItemIndex)
+        Log-UploadCandidates $root
+        return $null
+    }
+    Log ('UPLOAD_MENU_FOUND item=' + $ItemIndex + ' name=' + [string]$menu.Current.Name)
     Log ('UPLOAD_MENU_TARGET type=' + $menu.Current.ControlType.ProgrammaticName +
          ' enabled=' + $menu.Current.IsEnabled +
          ' offscreen=' + $menu.Current.IsOffscreen)
-    if (-not (Click-UIA-Verified $menu)) {
-        Log 'UPLOAD_MENU_MOUSE_NOT_VERIFIED'
-        Log-UploadCandidates $ChatWindow
+    # Retain the verified physical click that worked on real Edge. InvokePattern
+    # closed the menu without opening the native picker on this user's system.
+    if(-not (Click-UIA-Verified $menu)) {
+        Log ('UPLOAD_MENU_MOUSE_NOT_VERIFIED item=' + $ItemIndex)
         return $null
     }
-    Log 'UPLOAD_MENU_PHYSICAL_CLICK'
+    Log ('UPLOAD_MENU_PHYSICAL_CLICK item=' + $ItemIndex)
     $dialog=Wait-FileDialog 8
-    if ($null -ne $dialog) { return $dialog }
-    # Never toggle the + button a second time after a failed native picker:
-    # the menu may have closed, and a retry can accidentally reopen it.
-    Log 'PICKER_NOT_DETECTED_AFTER_PHYSICAL_MENU_CLICK'
+    if($null -ne $dialog) { return $dialog }
+    Log ('PICKER_NOT_DETECTED_AFTER_PHYSICAL_MENU_CLICK item=' + $ItemIndex)
     Log-ForegroundState 'picker-final'
-    Log-UploadCandidates $ChatWindow
     return $null
 }
 
@@ -697,7 +735,7 @@ function Write-FilenameUsingNativeFocus([System.Windows.Automation.AutomationEle
 
 function Select-ExactFile([System.Windows.Automation.AutomationElement]$Dialog, [string]$FullPath) {
     if(-not [System.IO.File]::Exists($FullPath)) {
-        throw 'PDF 附件路径不存在，停止上传。'
+        throw '当前附件路径不存在，停止上传。'
     }
     $directory=[System.IO.Path]::GetDirectoryName($FullPath)
     $filename=[System.IO.Path]::GetFileName($FullPath)
@@ -714,7 +752,7 @@ function Select-ExactFile([System.Windows.Automation.AutomationElement]$Dialog, 
     # Step 2: write ONLY the filename, not a guessed path in an old folder.
     # Never rely on clipboard-copy readback (can produce false positives).
     if(-not (Write-FilenameUsingNativeFocus $Dialog $filename)) {
-        throw '无法通过原生文件名框读取并验证目标 PDF 文件名；未点击“打开”。'
+        throw '无法通过原生文件名框读取并验证目标附件文件名；未点击“打开”。'
     }
 
     # The common dialog's UIA Open.InvokePattern may submit its highlighted
@@ -800,7 +838,7 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta13 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta14 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
@@ -836,20 +874,37 @@ try {
     # Upload first: pasting a long Prompt may disable/re-render the attach button.
     # Keep Prompt on clipboard now, and paste when picker operations finish.
     Log 'UPLOAD_FIRST_PROMPT_CLIPBOARD_READY'
+    Log ('MULTI_UPLOAD_PLAN count=' + $paths.Count + ' first=PDF')
     for ($i=0; $i -lt $paths.Count; $i++) {
-        if ($null -ne (Get-FileDialog)) { throw '上一个文件选择器仍处于打开状态。' }
+        $itemIndex=$i+1
+        if ($null -ne (Get-FileDialog)) {
+            throw ('第 ' + $itemIndex + ' 份文件：之前的文件选择器仍然打开。')
+        }
         [void][ZcgWin32]::SetForegroundWindow($browserWindow.Handle)
         Start-Sleep -Milliseconds 350
-        $foreground = Wait-ChatWindow 2
-        if ($null -eq $foreground) { throw 'ChatGPT 不是前台窗口；为防止误操作已停止。' }
-        Log ('FILE_START ' + ($i+1) + '/' + $paths.Count)
-        $dialog = Open-FileDialog $foreground.Element
-        if ($null -eq $dialog) { throw '无法通过 UI Automation 打开 ChatGPT 文件选择器。请手动上传；网页可能已更新。' }
+        $foreground=Wait-ChatWindow 3
+        if($null -eq $foreground -or $foreground.Handle -ne $script:ChatWindowHandle) {
+            throw ('第 ' + $itemIndex + ' 份文件：ChatGPT 不是预期前台窗口。')
+        }
+        $extension=[System.IO.Path]::GetExtension($paths[$i]).ToLowerInvariant()
+        Log ('FILE_START ' + $itemIndex + '/' + $paths.Count + ' extension=' + $extension)
+        $dialog=Open-FileDialog $itemIndex $paths.Count
+        if($null -eq $dialog) {
+            throw ('第 ' + $itemIndex + '/' + $paths.Count + ' 份附件：未能打开文件选择器。')
+        }
         Select-ExactFile $dialog $paths[$i]
-        Log ('FILE_PICKER_CLOSED ' + ($i+1) + '/' + $paths.Count)
-        Start-Sleep -Milliseconds 1100
+        Log ('FILE_PICKER_CLOSED ' + $itemIndex + '/' + $paths.Count + ' extension=' + $extension)
+        # Closing the Windows picker is NOT proof that ChatGPT has ingested
+        # the attachment. Leave time for the browser's async upload/rerender.
+        if($itemIndex -lt $paths.Count) {
+            Log ('MULTI_NEXT_WAIT after=' + $itemIndex)
+            Start-Sleep -Milliseconds 2200
+        } else {
+            Start-Sleep -Milliseconds 1800
+        }
     }
     Log ('ALL_PICKERS_CLOSED ' + $paths.Count)
+    Log 'ATTACHMENTS_REQUIRE_VISUAL_VERIFICATION web upload status not guaranteed'
     [void][ZcgWin32]::SetForegroundWindow($browserWindow.Handle)
     $foreground=Wait-ChatWindow 2
     if ($null -ne $foreground -and $foreground.Handle -eq $script:ChatWindowHandle) {
