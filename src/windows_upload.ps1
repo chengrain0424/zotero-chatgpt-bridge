@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta11 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta12 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -32,6 +32,10 @@ public static class ZcgWin32 {
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hWnd);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeoutGet(IntPtr hWnd, uint msg, UIntPtr wParam,
+        StringBuilder text, uint flags, uint timeout, out UIntPtr result);
+
     [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO info);
     [StructLayout(LayoutKind.Sequential)] public struct RECT {
         public int Left, Top, Right, Bottom;
@@ -592,9 +596,7 @@ function Write-FilenameWithKeyboard([System.Windows.Automation.AutomationElement
     }
 }
 
-function Get-NativeFileNameFocus([System.Windows.Automation.AutomationElement]$Dialog) {
-    # Windows 11 may expose 1148 as Pane only, despite its real native input
-    # receiving keyboard focus. Inspect Win32 handles rather than UIA text.
+function Get-VerifiedDialogFocus([System.Windows.Automation.AutomationElement]$Dialog) {
     $active=Get-FileDialog
     if ($null -eq $active -or -not $active.Equals($Dialog)) { return $null }
     $dlg=[ZcgWin32]::GetForegroundWindow()
@@ -621,24 +623,143 @@ function Get-NativeFileNameFocus([System.Windows.Automation.AutomationElement]$D
         if($parent -eq $node) { break }
         $node=$parent
     }
-    Log ('FILENAME_WIN32_FOCUS inPicker=' + $belongs + ' has1148=' +
-        $filenameAncestor + ' classes=' + [string]::Join('>', $classes.ToArray()))
+    $focusClass=if($classes.Count -gt 0) { $classes[0].Split('#')[0] } else { '' }
     return [pscustomobject]@{
-        Verified=($belongs -and $filenameAncestor);
-        FocusHandle=$info.hwndFocus
+        InPicker=$belongs; Has1148=$filenameAncestor;
+        IsEdit=($focusClass -eq 'Edit'); FocusHandle=$info.hwndFocus;
+        Classes=[string]::Join('>', $classes.ToArray())
+    }
+}
+
+function Get-NativeFileNameFocus([System.Windows.Automation.AutomationElement]$Dialog) {
+    $info=Get-VerifiedDialogFocus $Dialog
+    if($null -eq $info) { return $null }
+    $verified=$info.InPicker -and $info.Has1148 -and $info.IsEdit
+    Log ('FILENAME_WIN32_FOCUS inPicker=' + $info.InPicker +
+        ' has1148=' + $info.Has1148 + ' edit=' + $info.IsEdit +
+        ' classes=' + $info.Classes)
+    return [pscustomobject]@{
+        Verified=$verified; FocusHandle=$info.FocusHandle
+    }
+}
+
+function Read-NativeEditText([IntPtr]$Handle) {
+    # Real WM_GETTEXT against the native Edit HWND, NOT clipboard readback.
+    # On timeout/UIPI failure return null and fail closed.
+    if($Handle -eq [IntPtr]::Zero) { return $null }
+    $buffer=New-Object System.Text.StringBuilder 32768
+    $messageResult=[UIntPtr]::Zero
+    try {
+        $ok=[ZcgWin32]::SendMessageTimeoutGet($Handle,0x000D,
+            [UIntPtr]([uint32]$buffer.Capacity),$buffer,0x0002,1200,
+            [ref]$messageResult)
+        if($ok -eq [IntPtr]::Zero) { return $null }
+        return $buffer.ToString()
+    } catch { return $null }
+}
+
+function Test-NativePathEqual([string]$Actual,[string]$Expected) {
+    if([string]::IsNullOrWhiteSpace($Actual) -or
+       [string]::IsNullOrWhiteSpace($Expected)) { return $false }
+    try {
+        $a=[System.IO.Path]::GetFullPath($Actual.Trim('"')).TrimEnd('\')
+        $b=[System.IO.Path]::GetFullPath($Expected.Trim('"')).TrimEnd('\')
+        return [string]::Equals($a,$b,[System.StringComparison]::OrdinalIgnoreCase)
+    } catch { return $false }
+}
+
+function Get-AddressBarFocus([System.Windows.Automation.AutomationElement]$Dialog) {
+    $info=Get-VerifiedDialogFocus $Dialog
+    if($null -eq $info) { return $null }
+    # Address location must be an Edit in the *verified native chooser*, not
+    # the filename control (1148), search box, or any browser field.
+    $addressShape=$info.Classes -match '(?i)(ComboBox|Address Band Root|Breadcrumb|ToolbarWindow32)'
+    $verified=$info.InPicker -and $info.IsEdit -and -not $info.Has1148 -and $addressShape
+    Log ('ADDRESS_FOCUS inPicker=' + $info.InPicker + ' edit=' +
+        $info.IsEdit + ' has1148=' + $info.Has1148 +
+        ' addressShape=' + $addressShape + ' classes=' + $info.Classes)
+    return [pscustomobject]@{
+        Verified=$verified; FocusHandle=$info.FocusHandle
+    }
+}
+
+function Focus-AddressBar([System.Windows.Automation.AutomationElement]$Dialog) {
+    if($null -eq (Get-FileDialog)) { return $null }
+    # Ctrl+L and Alt+D are Explorer's standard location-bar shortcuts.
+    foreach($shortcut in @('^l','%d')) {
+        try { [System.Windows.Forms.SendKeys]::SendWait($shortcut) } catch { continue }
+        Start-Sleep -Milliseconds 170
+        $focus=Get-AddressBarFocus $Dialog
+        if($null -ne $focus -and $focus.Verified) {
+            Log ('ADDRESS_FOCUSED shortcut=' + $shortcut)
+            return $focus
+        }
+    }
+    Log 'ADDRESS_FOCUS_UNVERIFIED stopped'
+    return $null
+}
+
+function Navigate-ToExactFolder([System.Windows.Automation.AutomationElement]$Dialog,
+                                [string]$FolderPath) {
+    if(-not [System.IO.Directory]::Exists($FolderPath)) {
+        throw 'PDF 所在目录已不存在，停止选择文件。'
+    }
+    Log 'ADDRESS_NAVIGATION_BEGIN'
+    $focus=Focus-AddressBar $Dialog
+    if($null -eq $focus) { throw '无法验证文件选择窗口的地址栏焦点；未输入目录。' }
+    $check=Get-AddressBarFocus $Dialog
+    if($null -eq $check -or -not $check.Verified -or
+       $check.FocusHandle -ne $focus.FocusHandle) {
+        throw '地址栏焦点发生变化，未输入目录。'
+    }
+    try {
+        [System.Windows.Forms.Clipboard]::SetText($FolderPath)
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait('^v')
+        Start-Sleep -Milliseconds 220
+        $text=Read-NativeEditText $focus.FocusHandle
+        if(-not (Test-NativePathEqual $text $FolderPath)) {
+            Log 'ADDRESS_PASTE_READBACK_FAILED'
+            throw '无法直接读取并确认地址栏内的目标目录；未执行导航。'
+        }
+        Log 'ADDRESS_PASTE_VERIFIED'
+        if($null -eq (Get-FileDialog)) {
+            throw '文件对话框焦点已丢失，未执行目录导航。'
+        }
+        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+        Start-Sleep -Milliseconds 650
+        if($null -eq (Get-FileDialog)) {
+            throw '目录导航后文件对话框消失，停止上传。'
+        }
+        # Re-open location bar: it should expose the ACTIVE directory, not
+        # merely the path we entered before pressing Enter.
+        $after=Focus-AddressBar $Dialog
+        if($null -eq $after) { throw '目录导航后无法读取地址栏。' }
+        $actual=Read-NativeEditText $after.FocusHandle
+        if(-not (Test-NativePathEqual $actual $FolderPath)) {
+            Log 'ADDRESS_NAVIGATION_NOT_VERIFIED'
+            throw '文件选择器未确认进入目标 PDF 文件夹，停止上传。'
+        }
+        Log 'FOLDER_NAVIGATED_VERIFIED'
+    } finally {
+        # Restore the prepared Prompt on the clipboard for manual fallback.
+        try {
+            if(-not [string]::IsNullOrEmpty($script:PromptValue)) {
+                [System.Windows.Forms.Clipboard]::SetText($script:PromptValue)
+            }
+        } catch {}
     }
 }
 
 function Write-FilenameUsingNativeFocus([System.Windows.Automation.AutomationElement]$Dialog,
-                                        [string]$FullPath) {
-    # Alt+N typically focuses "File name:" in the native Windows Open dialog.
-    # A locale or dialog variation can ignore it: in that case, fail closed.
-    # No Ctrl+A/V/C unless the Win32 focused control is within ID 1148.
+                                        [string]$FileName) {
+    # After verifying the directory, only type the basename in the native
+    # 'File name' Edit#1148 and inspect real HWND text via WM_GETTEXT.
     if($null -eq (Get-FileDialog)) { return $false }
     Log 'FILENAME_NATIVE_ALT_N_ATTEMPT'
     try { [System.Windows.Forms.SendKeys]::SendWait('%n') }
     catch { Log ('FILENAME_NATIVE_ALT_N_ERROR '+$_.Exception.GetType().Name); return $false }
-    Start-Sleep -Milliseconds 150
+    Start-Sleep -Milliseconds 160
     $focus=Get-NativeFileNameFocus $Dialog
     if($null -eq $focus -or -not $focus.Verified) {
         Log 'FILENAME_NATIVE_FOCUS_UNVERIFIED stopped'
@@ -646,7 +767,7 @@ function Write-FilenameUsingNativeFocus([System.Windows.Automation.AutomationEle
     }
     Log 'FILENAME_NATIVE_FOCUS_VERIFIED'
     try {
-        [System.Windows.Forms.Clipboard]::SetText($FullPath)
+        [System.Windows.Forms.Clipboard]::SetText($FileName)
         $check=Get-NativeFileNameFocus $Dialog
         if($null -eq $check -or -not $check.Verified -or
             $check.FocusHandle -ne $focus.FocusHandle) {
@@ -660,16 +781,13 @@ function Write-FilenameUsingNativeFocus([System.Windows.Automation.AutomationEle
             $check.FocusHandle -ne $focus.FocusHandle) {
             Log 'FILENAME_NATIVE_FOCUS_CHANGED_AFTER_PASTE stopped'; return $false
         }
-        [System.Windows.Forms.SendKeys]::SendWait('^a')
-        [System.Windows.Forms.SendKeys]::SendWait('^c')
-        Start-Sleep -Milliseconds 180
-        $readback=[System.Windows.Forms.Clipboard]::GetText()
-        if(-not [string]::Equals($readback,$FullPath,
+        $readback=Read-NativeEditText $focus.FocusHandle
+        if(-not [string]::Equals($readback,$FileName,
             [System.StringComparison]::Ordinal)) {
-            Log 'FILENAME_NATIVE_READBACK_MISMATCH stopped'
+            Log 'FILENAME_NATIVE_TEXT_READBACK_MISMATCH stopped'
             return $false
         }
-        Log 'FILENAME_NATIVE_READBACK_VERIFIED'
+        Log 'FILENAME_NATIVE_TEXT_VERIFIED'
         return $true
     } catch {
         Log ('FILENAME_NATIVE_KEYBOARD_ERROR '+$_.Exception.GetType().Name)
@@ -684,53 +802,45 @@ function Write-FilenameUsingNativeFocus([System.Windows.Automation.AutomationEle
 }
 
 function Select-ExactFile([System.Windows.Automation.AutomationElement]$Dialog, [string]$FullPath) {
-    if (-not [System.IO.File]::Exists($FullPath)) { throw '待上传的本地附件已不存在，请重新在 Zotero 中选择。' }
-    if ($null -eq (Get-FileDialog)) { throw '原生文件选择器不是当前活动窗口，已停止。' }
-    $field=Find-FilenameControl $Dialog
-    $verified=$false
-    if ($null -ne $field) {
-        try {
-            $controlType=$field.Current.ControlType.ProgrammaticName
-            $controlId=[string]$field.Current.AutomationId
-            Log ('FILENAME_FIELD type=' + $controlType + ' automationId=' + $controlId)
-        } catch {}
-        # First try an actual writable ValuePattern if offered by Windows UIA.
-        try {
-            $value=$field.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-            if (-not $value.Current.IsReadOnly) {
-                $value.SetValue($FullPath)
-                $verified=[string]::Equals([string]$value.Current.Value,
-                                          $FullPath,[System.StringComparison]::Ordinal)
-                if ($verified) { Log 'FILENAME_VALUEPATTERN_VERIFIED' }
-            }
-        } catch {
-            Log ('FILENAME_VALUEPATTERN_UNAVAILABLE ' + $_.Exception.GetType().Name)
-        }
-        if (-not $verified) {
-            $verified=Write-FilenameWithKeyboard $Dialog $field $FullPath
-        }
+    if(-not [System.IO.File]::Exists($FullPath)) {
+        throw 'PDF 附件路径不存在，停止上传。'
     }
-    if (-not $verified) {
-        # No UIA Edit (only Pane/1148): inspect verified native Win32 focus.
-        $verified=Write-FilenameUsingNativeFocus $Dialog $FullPath
+    $directory=[System.IO.Path]::GetDirectoryName($FullPath)
+    $filename=[System.IO.Path]::GetFileName($FullPath)
+    if([string]::IsNullOrWhiteSpace($directory) -or
+       [string]::IsNullOrWhiteSpace($filename) -or
+       -not [System.IO.Directory]::Exists($directory)) {
+        throw 'PDF 所在文件夹无效，停止上传。'
     }
-    if (-not $verified) {
-        throw '无法验证文件名输入框中的完整附件路径，未点击“打开”。'
+    if($null -eq (Get-FileDialog)) { throw '文件选择器不是当前前台窗口，停止上传。' }
+
+    # Step 1: go to the exact source folder through the address bar.
+    Navigate-ToExactFolder $Dialog $directory
+
+    # Step 2: write ONLY the filename, not a guessed path in an old folder.
+    # Never rely on clipboard-copy readback (can produce false positives).
+    if(-not (Write-FilenameUsingNativeFocus $Dialog $filename)) {
+        throw '无法通过原生文件名框读取并验证目标 PDF 文件名；未点击“打开”。'
     }
-    if ($null -eq (Get-FileDialog)) { throw '文件选择器在确认路径后已失去焦点，已停止。' }
+
+    # Revalidate actual file selection context immediately before opening.
+    # Don't send Enter here; the verified Open button is safer.
+    if($null -eq (Get-FileDialog)) {
+        throw '文件选择器在确认 PDF 名称后已失去焦点。'
+    }
     $ok=$Dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
         [System.Windows.Automation.PropertyCondition]::new(
             [System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1'))
-    if ($null -eq $ok) {
+    if($null -eq $ok) {
         $ok=Find-UIA $Dialog @([System.Windows.Automation.ControlType]::Button) '^(Open|打开)(\s|$)'
     }
-    if ($null -eq $ok -or -not (Invoke-UIA $ok)) {
+    if($null -eq $ok -or -not (Invoke-UIA $ok)) {
         throw '路径已验证，但无法点击文件选择器的“打开”按钮。'
     }
     Log 'FILENAME_OPEN_CLICKED'
     Start-Sleep -Milliseconds 900
-    if ($null -ne (Get-FileDialog)) {
-        throw '文件选择器未关闭，请检查所选文件或权限。'
+    if($null -ne (Get-FileDialog)) {
+        throw '文件选择器仍未关闭，请检查文件选择或权限。'
     }
     Log 'FILENAME_PICKER_CLOSED'
 }
@@ -794,7 +904,7 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta11 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta12 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
