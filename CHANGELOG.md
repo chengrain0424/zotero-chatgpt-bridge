@@ -1,3 +1,12 @@
+## v0.4.1 (development build) — Import ChatGPT ZIP or Markdown as a Zotero child note
+
+- Add right-click **Import ChatGPT ZIP / Markdown note** and a dedicated item-pane drag/drop target (does not intercept Zotero's native item list drag/drop).
+- Validate ZIP entry count, traversal paths, duplicate names, and compressed/uncompressed size budgets before extracting Markdown and supported images to a temporary work directory.
+- Use Better Notes' published `api.$import.fromMD(mdPath, {noteId, ignoreVersion: true})` to import into a new Zotero child note, preserving existing notes. Missing or incompatible Better Notes fails visibly without creating an empty note.
+- Verify Markdown images exist; preserve the original ZIP as an additional Zotero attachment where the attachment API permits.
+- Existing PDF/SI upload, full English research note prompt, 120k editor and no-auto-send unaffected.
+- Development CI packaging only; requires Zotero 10 + Better Notes real-device validation before a stable Release.
+
 ## v0.4.0 — Consolidated latest release (Windows + macOS)
 
 - Publish **one latest v0.4.0 XPI** for Windows Edge/Chrome and macOS Safari using the tested beta.21 functionality.
