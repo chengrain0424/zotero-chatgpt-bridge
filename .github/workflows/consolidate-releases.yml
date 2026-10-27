@@ -1,0 +1,86 @@
+name: Consolidate release history into three versions
+
+on:
+  push:
+    branches:
+      - feature/windows-edge-chrome
+
+jobs:
+  consolidate:
+    if: contains(github.event.head_commit.message, '[consolidate-three-releases]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Confirm the current v0.4.0 Release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release view v0.4.0 --json assets,tagName
+      - name: Create historical version tags at their original commits
+        run: |
+          set -euo pipefail
+          if ! git show-ref --verify --quiet refs/tags/v0.3.0; then
+            git tag v0.3.0 "$(git rev-parse 'v0.3.0-beta^{commit}')"
+            git push origin refs/tags/v0.3.0
+          fi
+          if ! git show-ref --verify --quiet refs/tags/v0.3.9; then
+            git tag v0.3.9 "$(git rev-parse 'v0.3.9-beta^{commit}')"
+            git push origin refs/tags/v0.3.9
+          fi
+          test "$(git rev-parse 'v0.3.0^{commit}')" = "$(git rev-parse 'v0.3.0-beta^{commit}')"
+          test "$(git rev-parse 'v0.3.9^{commit}')" = "$(git rev-parse 'v0.3.9-beta^{commit}')"
+      - name: Retrieve and verify authentic historical XPI files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/zotero-history/030 /tmp/zotero-history/039
+          git show 'v0.3.0-beta:dist/Zotero_to_ChatGPT_Direct_v0.3.0_Zotero10.xpi' > /tmp/zotero-history/030/Zotero_to_ChatGPT_Direct_v0.3.0_Zotero10.xpi
+          git show 'v0.3.0-beta:dist/SHA256SUMS' > /tmp/zotero-history/030/SHA256SUMS
+          (cd /tmp/zotero-history/030 && sha256sum -c SHA256SUMS)
+          gh release download v0.3.9-beta --pattern '*.xpi' --dir /tmp/zotero-history/039
+          test "$(find /tmp/zotero-history/039 -maxdepth 1 -name '*.xpi' | wc -l)" -eq 1
+          (cd /tmp/zotero-history/039 && sha256sum *.xpi > SHA256SUMS)
+      - name: Publish historical versions with original source references
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! gh release view v0.3.0 >/dev/null 2>&1; then
+            gh release create v0.3.0 \
+              /tmp/zotero-history/030/Zotero_to_ChatGPT_Direct_v0.3.0_Zotero10.xpi \
+              /tmp/zotero-history/030/SHA256SUMS \
+              --verify-tag --title 'Zotero ChatGPT Bridge v0.3.0 (Historical)' \
+              --notes 'Historical v0.3.0: the unmodified XPI and checksum from the original v0.3.0-beta source tag, retained for reference and compatibility.'
+          fi
+          if ! gh release view v0.3.9 >/dev/null 2>&1; then
+            gh release create v0.3.9 \
+              /tmp/zotero-history/039/*.xpi /tmp/zotero-history/039/SHA256SUMS \
+              --verify-tag --title 'Zotero ChatGPT Bridge v0.3.9 (Historical)' \
+              --notes 'Historical v0.3.9: the original XPI binary from the former v0.3.9-beta GitHub Release, preserved without rebuilding.'
+          fi
+          for t in v0.3.0 v0.3.9 v0.4.0; do
+            echo "Confirming $t"
+            gh release view "$t" --json tagName,assets
+            test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$t" --jq '.assets | length')" -ge 1
+          done
+      - name: Remove older beta Release entries (preserving historical git tags)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' | while IFS= read -r t; do
+            case "$t" in
+              v0.3.0|v0.3.9|v0.4.0) echo "Preserving $t";;
+              *) echo "Deleting superseded Release entry $t"; gh release delete "$t" --yes;;
+            esac
+          done
+          tags="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' | sort)"
+          printf '%s\n' "$tags"
+          test "$tags" = "$(printf 'v0.3.0\nv0.3.9\nv0.4.0')"
+          gh release view v0.4.0 --json url,tagName,name
