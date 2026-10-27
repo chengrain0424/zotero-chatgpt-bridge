@@ -7,6 +7,58 @@ var ZCGNoteImporter = {
   paneID: "zcg-ai-note-import",
   sectionID: null,
   busy: false,
+  keepZipPref: "extensions.zoteroChatGPTBridge.keepNoteZIP",
+  importedTag: "ChatGPT Bridge Import",
+  panelStates: new Map(),
+  getKeepZIP() {
+    try { return Services.prefs.getBoolPref(this.keepZipPref,false); }
+    catch (_) { return false; }
+  },
+  setKeepZIP(value) {
+    Services.prefs.setBoolPref(this.keepZipPref,!!value);
+  },
+  getChildNotes(parent) {
+    if(!parent?.isRegularItem?.()) return [];
+    try { return (parent.getNotes?.()||[]).map(id=>Zotero.Items.get(id))
+      .filter(note=>note?.isNote?.() && !note.deleted); }
+    catch(e) { Zotero.logError(e);return []; }
+  },
+  getImportedNotes(parent) {
+    return this.getChildNotes(parent).filter(note=>{
+      try { return note.getTags?.().some(t=>t.tag===this.importedTag); }
+      catch(_) { return false; }
+    });
+  },
+  refreshStatus(parent) {
+    for(const [body,state] of this.panelStates) {
+      if(body.isConnected===false) { this.panelStates.delete(body);continue; }
+      if(state.itemID!==parent.id) continue;
+      this.renderStatus(state.status,parent,state.win);
+    }
+  },
+  renderStatus(target,parent,win) {
+    target.replaceChildren();
+    const notes=this.getChildNotes(parent), tagged=this.getImportedNotes(parent);
+    const summary=target.ownerDocument.createElementNS("http://www.w3.org/1999/xhtml","div");
+    summary.textContent="已有子笔记 "+notes.length+" 篇 · ChatGPT 导入 "+tagged.length+" 篇";
+    summary.style.cssText="font-size:12px;opacity:.9;";
+    target.appendChild(summary);
+    if(!tagged.length) return;
+    const recent=tagged[tagged.length-1];
+    const link=target.ownerDocument.createElementNS("http://www.w3.org/1999/xhtml","button");
+    link.type="button";
+    link.textContent="打开最近导入的笔记";
+    link.style.cssText="border:0;background:transparent;color:var(--fill-primary,#1769aa);cursor:pointer;font-size:12px;text-decoration:underline;padding:5px 0 0;text-align:left;";
+    link.addEventListener("click",e=>{
+      e.stopPropagation();
+      try {
+        const pane=win?.ZoteroPane||Zotero.getMainWindow?.()?.ZoteroPane;
+        if(typeof pane?.selectItem!=="function") throw new Error("Zotero 笔记定位功能不可用");
+        void pane.selectItem(recent.id);
+      }catch(err){Zotero.logError(err);this.notify(win,"打开笔记失败："+err.message);}
+    });
+    target.appendChild(link);
+  },
   limits: { zip: 80*1024*1024, total: 120*1024*1024, md: 8*1024*1024,
             image: 24*1024*1024, entries: 400 },
   supportedImage: /\.(?:png|jpe?g|gif|webp)$/i,
@@ -179,10 +231,14 @@ var ZCGNoteImporter = {
       const saved=Zotero.Items.get(note.id);
       if(!saved?.getNote()?.trim() || !saved.getNote().includes("<"))
         throw new Error("导入后子笔记内容为空或无效。");
-      // Preserve the original archive to make import reproducible and guard against
-      // unsupported BN Markdown features. Not required for plain .md imports.
+      // Apply a lightweight, persistent marker to the child note.
+      // Never rewrite the imported Markdown title or existing Zotero notes.
+      try { saved.addTag(this.importedTag); await saved.saveTx(); }
+      catch(e) { Zotero.logError(e); }
+      // ZIP backup is optional. Default OFF: an embedded Zotero child note
+      // should not automatically create a redundant ZIP attachment.
       let attached=false;
-      if(isZip && Zotero.Attachments?.importFromFile) {
+      if(isZip && this.getKeepZIP() && Zotero.Attachments?.importFromFile) {
         try {
           const source=await Zotero.Attachments.importFromFile({
             file:filePath,parentItemID:parent.id,libraryID:parent.libraryID,
@@ -191,8 +247,10 @@ var ZCGNoteImporter = {
           attached=!!source?.id;
         } catch(e) {Zotero.logError(e);}
       }
+      this.refreshStatus(parent);
       this.notify(win,"已导入到「"+String(parent.getField("title")||"文献")+"」的子笔记。"+
-        (isZip?"\nZIP 内图片 "+extracted.imageCount+" 张；原始 ZIP "+(attached?"已保留为附件。":"未自动备份，请自行保留。"):"")+
+        (isZip?"\nZIP 内图片 "+extracted.imageCount+" 张；"+
+          (this.getKeepZIP()?(attached?"ZIP 已作为附件保留。":"ZIP 备份失败，请保留下载原件。"):"默认不保存 ZIP 附件。"):"")+
         "\n请打开笔记确认图片和公式显示正确。");
       return saved;
     } catch(e) {
@@ -233,19 +291,31 @@ var ZCGNoteImporter = {
       paneID:this.paneID, pluginID:this.addonID,
       header:{l10nID:"general-notes",icon:rootURI+"icon.svg"},
       sidenav:{l10nID:"general-notes",icon:rootURI+"icon.svg"},
-      onRender:({body,item})=>{
+      // Zotero calls onItemChange before rendering. Disabling a section also
+      // hides its navigation icon, including for PDF, SI, and note children.
+      onItemChange:({item,setEnabled})=>{
+        setEnabled(!!item?.isRegularItem?.());
+        return true;
+      },
+      onDestroy:({body})=>{this.panelStates.delete(body);},
+      onRender:({body,item,setSectionSummary})=>{
         body.replaceChildren();
+        this.panelStates.delete(body);
+        if(!item?.isRegularItem?.()) return; // defensive even if Zotero renders it
         const doc=body.ownerDocument;
+        const mainWindow=Zotero.getMainWindow?.()||doc.defaultView;
+        const current=item.id;
+        const status=doc.createElementNS("http://www.w3.org/1999/xhtml","div");
+        status.style.cssText="padding:4px 8px 8px;";
+        body.appendChild(status);
+        this.panelStates.set(body,{itemID:current,status,win:mainWindow});
+        this.renderStatus(status,item,mainWindow);
+        const n=this.getImportedNotes(item).length;
+        if(typeof setSectionSummary==="function")setSectionSummary(n?"AI 笔记 "+n+" 篇":"导入 ChatGPT 笔记");
         const area=doc.createElementNS("http://www.w3.org/1999/xhtml","div");
         area.textContent="拖入 ChatGPT ZIP / Markdown，创建关联子笔记；或点击选择文件";
-        area.style.cssText="border:2px dashed #8d99a6;border-radius:7px;padding:16px 10px;text-align:center;cursor:pointer;margin:8px 0;font-size:12px;";
+        area.style.cssText="border:2px dashed #8d99a6;border-radius:7px;padding:12px 9px;text-align:center;cursor:pointer;margin:3px 0 8px;font-size:12px;";
         body.appendChild(area);
-        if(!item?.isRegularItem?.()) {
-          area.textContent="请先在左侧选择一篇文献，再拖入 ChatGPT ZIP。";
-          return;
-        }
-        const current=item.id;
-        const mainWindow=doc.defaultView;
         area.addEventListener("click",()=>{
           void (async()=>{try{const path=await this.pickFile(mainWindow);
             if(path) await this.runImport(Zotero.Items.get(current),path,mainWindow);
@@ -263,6 +333,15 @@ var ZCGNoteImporter = {
             await this.runImport(Zotero.Items.get(current),path,mainWindow);
           }catch(err){Zotero.logError(err);this.notify(mainWindow,"导入失败："+err.message);}})();
         });
+        const label=doc.createElementNS("http://www.w3.org/1999/xhtml","label");
+        label.style.cssText="display:flex;gap:6px;align-items:center;font-size:11px;cursor:pointer;padding:2px 8px 6px;";
+        const checkbox=doc.createElementNS("http://www.w3.org/1999/xhtml","input");
+        checkbox.type="checkbox";checkbox.checked=this.getKeepZIP();
+        checkbox.addEventListener("change",()=>this.setKeepZIP(checkbox.checked));
+        const caption=doc.createElementNS("http://www.w3.org/1999/xhtml","span");
+        caption.textContent="同时保留原始 ZIP 附件（默认不保留）";
+        label.append(checkbox,caption);
+        body.appendChild(label);
       }
     });
   },
@@ -270,5 +349,6 @@ var ZCGNoteImporter = {
     if(!this.sectionID) return;
     try{Zotero.ItemPaneManager.unregisterSection(this.sectionID);}catch(e){Zotero.logError(e);}
     this.sectionID=null;
+    this.panelStates.clear();
   }
 };
