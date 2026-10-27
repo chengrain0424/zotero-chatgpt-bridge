@@ -1,3 +1,11 @@
+## v0.4.0 — Consolidated latest release (Windows + macOS)
+
+- Publish **one latest v0.4.0 XPI** for Windows Edge/Chrome and macOS Safari using the tested beta.21 functionality.
+- Retain only historical v0.3.0 and v0.3.9 plus latest v0.4.0 in GitHub Releases; older test packages are removed only after the three stable installers are independently checked.
+- Preserve the full 35,986-character default English Zotero/Obsidian scientific reading-note Prompt, main/SI contradiction checks, preliminary material and energy balances, interleaved figures, compact tables, MathJax guidance and verification-status labels.
+- Preserve Windows PDF + SI PDF/Word attachments, full-Prompt paste verification, 120,000-character editor, existing macOS Safari workflow, and **no auto-send**.
+- Remove superseded beta auto-publishing workflows. Older milestone packages are rebuilt from their original versioned files with identical bytes.
+
 ## v0.4.0 — Consolidated stable-numbered Release (Windows + macOS)
 
 - Promote the verified beta.21 feature set to the single maintained **v0.4.0** XPI with no automatic sending. Preserve the full 35,986-character evidence-based research note, cross-source consistency checks, preliminary material and energy balances, Obsidian MathJax, figure placement and compact tables.
