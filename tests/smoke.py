@@ -4,7 +4,7 @@ import json, re, tempfile, os
 ROOT=Path(__file__).resolve().parents[1]
 src=ROOT/'src'
 manifest=json.loads((src/'manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='0.4.0'
+assert manifest['version']=='0.4.1'
 win=(src/'windows_upload.ps1').read_text(encoding='utf-8')
 assert 'NO_AUTO_SEND' in win
 assert 'Select-ExactFile' in win
@@ -164,3 +164,18 @@ assert 'previousBeta20DefaultTemplate:' in bridge_text
 assert '### Figure-caption and mixed Markdown/MathJax reliability' in bridge_text
 assert '### Evidence-check status labels for independent reasoning' in bridge_text
 assert '### Long tables and printable-page legibility' in bridge_text
+
+# Child note ZIP import through Better Notes, including drop zone and safe ZIP extraction.
+importer=(src/'note_import.js').read_text(encoding='utf-8')
+bootstrap=(src/'bootstrap.js').read_text(encoding='utf-8')
+builder=(ROOT/'scripts/build_release.py').read_text(encoding='utf-8')
+for token in ['ZCGNoteImporter','getBetterNotes()','fromMD(extracted.mdPath,{noteId:note.id,ignoreVersion:true})',
+              'new Zotero.Item("note")','note.parentID=parent.id','nsIZipReader',
+              'checkEntryPath(entryName)','planEntries(entries)','this.fileFromDrop(e)',
+              'registerItemPane(rootURI)','max 120 MB']:
+    if token=='max 120 MB': continue
+    assert token in importer,token
+assert '"note_import.js"' in bootstrap
+assert 'ZCGNoteImporter.registerItemPane(rootURI)' in bootstrap
+assert 'zcg-import-note-command' in bridge_text
+assert '"note_import.js"' in builder
