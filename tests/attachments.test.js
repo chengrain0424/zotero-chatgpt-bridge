@@ -123,6 +123,30 @@ const bridge=sandbox.TEST_BRIDGE;
   assert.equal(bridge.getTemplate(),'Custom text; preserve personal preferences');
   prefs.delete(bridge.promptPref);
   assert.equal(bridge.getTemplate(),bridge.defaultTemplate);
+  // Regression: previous XPI incorrectly required beta17 even when beta19
+  // windows_source.js was present. Confirm the real bundled helper passes,
+  // and that a run folder and script are prepared before PowerShell launches.
+  const windowsHelper=fs.readFileSync(path.join(__dirname,'../src/windows_upload.ps1'),'utf8');
+  bridge.init('test Safari source',windowsHelper);
+  assert.equal(bridge.getWindowsHelperBuild(),'v0.4.0beta20 uia-20261027');
+  bridge.init('test Safari source','');
+  assert.throws(()=>bridge.getWindowsHelperBuild(),/missing or incomplete/);
+  bridge.init('test Safari source',windowsHelper);
+  const writtenFiles=new Map();
+  sandbox.PathUtils={join:(...pieces)=>pieces.join('/')};
+  sandbox.Ci={nsIFile:'nsIFile'};
+  sandbox.Services.dirsvc={get:()=>({path:'C:/temp'})};
+  sandbox.Zotero.Utilities={copyToClipboard:()=>{}};
+  sandbox.IOUtils.makeDirectory=async()=>{};
+  sandbox.IOUtils.writeUTF8=async(p,value)=>writtenFiles.set(p,value);
+  const prepared=await bridge.prepareWindows(files[0]);
+  assert(prepared.runDir.includes('/run-'),'No run directory was allocated');
+  assert(writtenFiles.get(prepared.scriptPath).startsWith('\\uFEFF'),'PowerShell helper missing UTF-8 BOM');
+  assert(writtenFiles.get(prepared.scriptPath).includes('WIN_SCRIPT_BUILD v0.4.0beta20 uia-20261027'));
+  assert(writtenFiles.get(prepared.statusPath).includes('BRIDGE_BUILD v0.4.0beta20 uia-20261027 windows'));
+  assert.equal(writtenFiles.get(prepared.promptPath).length>1000,true);
+  assert(prepared.files.length>=2,'PDF + SI attachments should be prepared');
+  console.log('PASS: Windows embedded helper recognised, run directory and PowerShell script generated');
   console.log('PASS: shared English Markdown default, metadata substitutions, legacy default migration, custom prompt preserved');
   console.log('PASS: all-supported mode includes arbitrary DOCX/XLSX; SI-only filters; other-parent excluded; missing tracked');
 })().catch(err=>{console.error(err);process.exitCode=1;});
