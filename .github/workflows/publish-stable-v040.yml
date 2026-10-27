@@ -1,0 +1,97 @@
+name: Publish stable Zotero 0.4.0 and clean Releases
+on:
+  push:
+    branches: [feature/windows-edge-chrome]
+jobs:
+  publish:
+    if: contains(github.event.head_commit.message, '[publish-stable040]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate stable package and historical packages
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+          node --check src/bridge.js
+          node --test tests/attachments.test.js
+          python3 tests/smoke.py
+          mkdir -p /tmp/zotero-old
+          for v in 0.3.0 0.3.9; do
+            git show "v$v-beta:dist/Zotero_to_ChatGPT_Direct_v$v_Zotero10.xpi" > "/tmp/zotero-old/Zotero_to_ChatGPT_Direct_v$v_Zotero10.xpi"
+          done
+          python3 - <<'PY'
+          import json,zipfile
+          for v in ('0.3.0','0.3.9'):
+              with zipfile.ZipFile(f'/tmp/zotero-old/Zotero_to_ChatGPT_Direct_v{v}_Zotero10.xpi') as z:
+                  assert z.testzip() is None
+                  assert json.loads(z.read('manifest.json'))['version']==v
+          PY
+          python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
+          python3 - <<'PY'
+          import json,re,zipfile
+          with zipfile.ZipFile('dist/Zotero_to_ChatGPT_Direct_v0.4.0_Zotero10.xpi') as z:
+              assert z.testzip() is None
+              assert json.loads(z.read('manifest.json'))['version']=='0.4.0'
+              src=z.read('bridge.js').decode()
+              m=re.search(r'defaultTemplate: ("(?:\\.|[^"\\])*")',src)
+              assert m and len(json.loads(m.group(1)))==35986
+              assert 'promptMaxLength: 120000' in src
+              w=z.read('windows_source.js').decode()
+              ps=json.loads(w.split('var WINDOWS_SOURCE = ',1)[1].rsplit(';',1)[0])
+              assert 'WIN_SCRIPT_BUILD v0.4.0 uia-20261027' in ps
+              assert 'ZCGBridge.init(scope.SAFARI_SOURCE, scope.WINDOWS_SOURCE)' in z.read('bootstrap.js').decode()
+          PY
+      - name: Create three stable Releases before deleting any old Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! gh release view v0.3.0 >/dev/null 2>&1; then
+            gh release create v0.3.0 /tmp/zotero-old/Zotero_to_ChatGPT_Direct_v0.3.0_Zotero10.xpi \
+              --target "$(git rev-list -n 1 v0.3.0-beta)" --title "Zotero ChatGPT Bridge v0.3.0 (historical)" \
+              --notes "Original 0.3.0 macOS installer, preserved unchanged from historical tag v0.3.0-beta."
+          fi
+          if ! gh release view v0.3.9 >/dev/null 2>&1; then
+            gh release create v0.3.9 /tmp/zotero-old/Zotero_to_ChatGPT_Direct_v0.3.9_Zotero10.xpi \
+              --target "$(git rev-list -n 1 v0.3.9-beta)" --title "Zotero ChatGPT Bridge v0.3.9 (historical)" \
+              --notes "Original 0.3.9 macOS installer, preserved unchanged from historical tag v0.3.9-beta."
+          fi
+          if ! gh release view v0.4.0 >/dev/null 2>&1; then
+            cat > /tmp/release-notes.md <<'NOTES'
+          # Zotero ChatGPT Bridge v0.4.0
+
+          Latest unified Zotero 10 installer for Windows Edge/Chrome and macOS Safari.
+
+          - Automatically prepares main PDF and supported SI PDF/Word attachments, retaining sequential Windows file-picker operation and existing macOS Safari support; no auto-send.
+          - Full 35,986-character English research-note default, integrated figures, main/SI consistency checks, preliminary material/energy balances, arithmetic-confidence labels, compact tables and Obsidian MathJax guidance.
+          - 120,000-character custom Prompt editor, no silent clipping and full paste checks.
+          - Fixed Windows helper version detection and installation-package checks. Confirm attachments and Prompt before sending.
+          - Downstream Markdown/PDF rendering and page breaks are external to the plugin.
+
+          Historical versions 0.3.0 and 0.3.9 remain downloadable.
+          NOTES
+            gh release create v0.4.0 dist/Zotero_to_ChatGPT_Direct_v0.4.0_Zotero10.xpi dist/SHA256SUMS \
+              --target "$GITHUB_SHA" --title "Zotero ChatGPT Bridge v0.4.0 (Windows + macOS)" --notes-file /tmp/release-notes.md
+          fi
+          for v in 0.3.0 0.3.9 0.4.0; do
+            gh release view "v$v" --json assets --jq '.assets[].size' \
+              | awk 'BEGIN{found=0} {if($1>1000)found=1} END{exit !found}'
+          done
+          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+            case "$tag" in
+              v0.3.0|v0.3.9|v0.4.0) ;;
+              v0.4.0-beta.*|v0.3.9-beta) gh release delete "$tag" --cleanup-tag --yes ;;
+              *) echo "Unknown release; stopping without deleting: $tag"; exit 1 ;;
+            esac
+          done
+          actual="$(gh release list --limit 100 --json tagName --jq '.[].tagName' | LC_ALL=C sort)"
+          expected="$(printf 'v0.3.0\nv0.3.9\nv0.4.0\n' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          echo "PASS: only v0.3.0, v0.3.9 and v0.4.0 Releases remain."
