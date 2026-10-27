@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero to ChatGPT Chat (macOS Safari / Windows Chromium)",
-  "version": "0.4.0-beta.14",
-  "description": "Experimental Windows upload: sequentially attach main PDF and SI PDF/Word with fresh composer UIA checks and isolated one-file directories. No auto-send.",
+  "version": "0.4.0-beta.15",
+  "description": "Windows Edge/Chrome experimental: safe multi-point plus-button hit-test retries for consecutive SI uploads, verified prompt-editor focus fallback; no auto-send.",
   "author": "ChatGPT-assisted community build",
   "applications": {
     "zotero": {
