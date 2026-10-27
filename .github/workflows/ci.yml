@@ -21,7 +21,7 @@ jobs:
       - name: Test build package
         run: |
           python3 scripts/build_release.py --owner dummy-owner --repo dummy-repo
-          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.13*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
+          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.0-beta.14*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert 'windows_source.js' in z.namelist()"
           python3 -m json.tool dist/updates.json > /dev/null
 
       - name: Build experimental Windows installer
@@ -32,7 +32,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Zotero-Windows-Experimental-XPI
-          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.13_Zotero10.xpi
+          path: dist/Zotero_to_ChatGPT_Direct_v0.4.0-beta.14_Zotero10.xpi
           if-no-files-found: error
           retention-days: 30
 
@@ -58,7 +58,7 @@ jobs:
           $ast = [System.Management.Automation.Language.Parser]::ParseFile('src/windows_upload.ps1', [ref]$tokens, [ref]$errors)
           if ($errors.Count) { throw 'Helper parser errors' }
           $functions = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object Name)
-          foreach ($name in @('Prepare-UploadStaging','Log-UploadCandidates','Get-VerifiedDialogFocus','Get-AddressBarFocus','Focus-AddressBar','Navigate-ToExactFolder','Read-NativeEditText','Test-NativePathEqual','Get-NativeFileNameFocus','Write-FilenameUsingNativeFocus','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Place-Prompt','Open-FileDialog')) {
+          foreach ($name in @('Prepare-UploadStaging','Wait-ComposerPlus','Open-FileDialog','Log-UploadCandidates','Get-VerifiedDialogFocus','Get-AddressBarFocus','Focus-AddressBar','Navigate-ToExactFolder','Read-NativeEditText','Test-NativePathEqual','Get-NativeFileNameFocus','Write-FilenameUsingNativeFocus','Log-PlusButtonState','Log-ForegroundState','Get-FileDialog','Test-OwnedByChat','Click-UIA-Verified','Invoke-UIA','Test-UIATarget','Place-Prompt','Open-FileDialog')) {
             if ($functions -notcontains $name) { throw "Missing helper function: $name" }
           }
       - name: Exercise native WM_GETTEXT on a Windows Edit HWND
@@ -115,6 +115,43 @@ jobs:
           }
           if ([IO.File]::ReadAllText($entries[0].FullName) -ne '%PDF-1.7 sample PDF') { throw 'PDF stage content mismatch' }
           Write-Host 'PASS single-file staging, hidden Zotero state excluded'
+      - name: Test three-file main PDF plus PDF and Word SI staging
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'zcg-multi-fixture'
+          $original = Join-Path $root 'original'
+          $task = Join-Path $root 'task'
+          [IO.Directory]::CreateDirectory($original) | Out-Null
+          [IO.Directory]::CreateDirectory($task) | Out-Null
+          $paper = Join-Path $original '正文论文.pdf'
+          $siPdf = Join-Path $original 'Supporting Information.pdf'
+          $siDocx = Join-Path $original 'SI experiment.docx'
+          $readerState = Join-Path $original '.zotero-reader-state'
+          [IO.File]::WriteAllBytes($paper, [Text.Encoding]::ASCII.GetBytes('%PDF-1.7 main'))
+          [IO.File]::WriteAllBytes($siPdf, [Text.Encoding]::ASCII.GetBytes('%PDF-1.7 SI'))
+          [IO.File]::WriteAllBytes($siDocx, [byte[]](0x50,0x4B,0x03,0x04,0x01,0x02))
+          [IO.File]::WriteAllText($readerState, 'Zotero internal file not to upload')
+          $upload = Join-Path $task 'upload_paths.txt'
+          $prompt = Join-Path $task 'prompt.txt'
+          $status = Join-Path $task 'status.log'
+          [IO.File]::WriteAllLines($upload, [string[]]@($paper,$siPdf,$siDocx), [Text.Encoding]::UTF8)
+          [IO.File]::WriteAllText($prompt, 'CI multi attachment prompt')
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -STA -ExecutionPolicy Bypass -File 'src/windows_upload.ps1' -Browser edge -PromptPath $prompt -UploadListPath $upload -StatusPath $status -SelfTestStaging
+          if ($LASTEXITCODE -ne 0) { throw 'Multi-stage helper failed' }
+          $log = [IO.File]::ReadAllText($status)
+          if ($log -notmatch 'STAGING_SELFTEST_PASS') { throw 'Missing multi-stage self-test PASS' }
+          $expected = @('正文论文.pdf','Supporting Information.pdf','SI experiment.docx')
+          for ($i=1; $i -le 3; $i++) {
+            $dir = Join-Path (Join-Path $task 'picker_staging') ('{0:D2}' -f $i)
+            $entries = @(Get-ChildItem -LiteralPath $dir -Force)
+            if ($entries.Count -ne 1 -or $entries[0].Name -cne $expected[$i-1]) {
+              throw "Stage $i has wrong attachment or contains Zotero state"
+            }
+            if ($log -notmatch "STAGED_SINGLE_FILE index=$i ") { throw "Missing stage log $i" }
+          }
+          $isolated = @(Get-ChildItem -LiteralPath (Join-Path $task 'picker_staging') -Directory)
+          if ($isolated.Count -ne 3) { throw 'Wrong number of independent picker directories' }
+          Write-Host 'PASS main PDF + SI PDF + SI DOCX, separate single-file picker directories'
       - name: Run helper startup smoke without opening a browser
         shell: powershell
         run: |
