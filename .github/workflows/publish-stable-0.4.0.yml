@@ -1,0 +1,139 @@
+name: Publish stable v0.4.0 and retain three releases
+
+on:
+  push:
+    branches:
+      - feature/windows-edge-chrome
+
+jobs:
+  publish-stable:
+    if: contains(github.event.head_commit.message, '[publish-stable-0.4.0]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify stable source and regression tests
+        run: |
+          set -euo pipefail
+          node --check src/bridge.js
+          node --test tests/attachments.test.js
+          python3 tests/smoke.py
+      - name: Build and inspect stable XPI
+        run: |
+          set -euo pipefail
+          python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
+          python3 - <<'PY'
+          import json, re, zipfile
+          from pathlib import Path
+          v = json.loads(Path('src/manifest.json').read_text(encoding='utf-8'))['version']
+          assert v == '0.4.0', v
+          xpi = Path('dist/Zotero_to_ChatGPT_Direct_v0.4.0_Zotero10.xpi')
+          assert xpi.is_file()
+          with zipfile.ZipFile(xpi) as z:
+              assert z.testzip() is None
+              assert all(f in z.namelist() for f in ('manifest.json','bootstrap.js','bridge.js',
+                  'windows_source.js','safari_source.js','prefs.xhtml','icon.svg'))
+              manifest=json.loads(z.read('manifest.json'))
+              assert manifest['version']=='0.4.0'
+              bridge=z.read('bridge.js').decode('utf-8')
+              match=re.search(r'defaultTemplate: ("(?:\\.|[^"\\])*")',bridge)
+              assert match
+              prompt=json.loads(match.group(1))
+              assert len(prompt)==35986,len(prompt)
+              assert '### Figure-caption and mixed Markdown/MathJax reliability' in prompt
+              assert '### Evidence-check status labels for independent reasoning' in prompt
+              assert '## Mandatory preliminary material, elemental and energy balance audit' in prompt
+              assert 'promptMaxLength: 120000' in bridge
+              assert 'getWindowsHelperBuild() {' in bridge
+              winjs=z.read('windows_source.js').decode('utf-8')
+              assert winjs.startswith('var WINDOWS_SOURCE = ')
+              ps=json.loads(winjs.split('var WINDOWS_SOURCE = ',1)[1].rsplit(';',1)[0].strip())
+              assert 'WIN_SCRIPT_BUILD v0.4.0 uia-20261027' in ps
+              assert 'function Place-Prompt(' in ps and 'function Select-ExactFile(' in ps
+              boot=z.read('bootstrap.js').decode('utf-8')
+              assert 'loadSubScript(rootURI + "windows_source.js", scope)' in boot
+              assert 'ZCGBridge.init(scope.SAFARI_SOURCE, scope.WINDOWS_SOURCE)' in boot
+              print('PASS stable v0.4.0 XPI, 35986-char prompt, Windows+macOS helpers')
+          PY
+      - name: Restore historical 0.3.0/0.3.9 original binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/zotero-historical/v030 /tmp/zotero-historical/v039
+          git show 'v0.3.0-beta:dist/Zotero_to_ChatGPT_Direct_v0.3.0_Zotero10.xpi' > /tmp/zotero-historical/v030/Zotero_to_ChatGPT_Direct_v0.3.0_Zotero10.xpi
+          git show 'v0.3.0-beta:dist/SHA256SUMS' > /tmp/zotero-historical/v030/SHA256SUMS
+          (cd /tmp/zotero-historical/v030 && sha256sum -c SHA256SUMS)
+          gh release download 'v0.3.9-beta' --pattern '*.xpi' --dir /tmp/zotero-historical/v039
+          test "$(find /tmp/zotero-historical/v039 -name '*.xpi' | wc -l)" -eq 1
+          (cd /tmp/zotero-historical/v039 && sha256sum *.xpi > SHA256SUMS)
+          test -s /tmp/zotero-historical/v039/SHA256SUMS
+      - name: Publish stable 0.4.0 and preserve two historical Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! gh release view 'v0.3.0' >/dev/null 2>&1; then
+            gh release create 'v0.3.0' \
+              /tmp/zotero-historical/v030/Zotero_to_ChatGPT_Direct_v0.3.0_Zotero10.xpi \
+              /tmp/zotero-historical/v030/SHA256SUMS \
+              --target "$(git rev-parse 'v0.3.0-beta^{commit}')" \
+              --title 'Zotero ChatGPT Bridge v0.3.0 (historical)' \
+              --notes 'Historical v0.3.0 archive with the exact original XPI binary from tag v0.3.0-beta. Kept for compatibility and provenance.'
+          fi
+          if ! gh release view 'v0.3.9' >/dev/null 2>&1; then
+            gh release create 'v0.3.9' \
+              /tmp/zotero-historical/v039/*.xpi \
+              /tmp/zotero-historical/v039/SHA256SUMS \
+              --target "$(git rev-parse 'v0.3.9-beta^{commit}')" \
+              --title 'Zotero ChatGPT Bridge v0.3.9 (historical)' \
+              --notes 'Historical v0.3.9 original XPI, preserved without rebuilding from the former v0.3.9-beta Release.'
+          fi
+          if ! gh release view 'v0.4.0' >/dev/null 2>&1; then
+            cat > /tmp/zotero-0.4.0-notes.md <<'NOTES'
+          # Zotero ChatGPT Bridge v0.4.0
+
+          Unified Windows Edge/Chrome and macOS Safari XPI for Zotero 10. This stable-numbered release packages the latest tested beta.21 functionality, with no automatic message sending.
+
+          - Sequential main-PDF plus SI PDF/DOC/DOCX uploads; verify attachment chips before sending.
+          - Full **35,986-character** English Zotero/Better Notes/Obsidian research-note Prompt, with main paper/SI cross-source checking, preliminary material and energy balances, figure integration, concise Markdown tables, Obsidian MathJax formatting and transparent verification status.
+          - Prompt editor accommodates **120,000 characters**, with complete clipboard paste protection and saved-preference readback.
+          - Fixes the previous Windows 'automation script missing' version-marker regression; validates the packaged Windows helper.
+          - Existing customised prompts remain untouched. Use **Restore default** in Zotero's PDF toolbar Prompt settings, then Save, to switch to the new built-in version.
+
+          Note: Browser UI automation remains sensitive to ChatGPT/OS changes, and Windows/macOS real-world behaviour can differ. Review all attachments and the Prompt before submitting. The XPI does not render Markdown-to-PDF files.
+
+          The Releases page intentionally preserves just v0.3.0, v0.3.9 and v0.4.0. Historic original binaries are retained.
+          NOTES
+            gh release create 'v0.4.0' \
+              dist/Zotero_to_ChatGPT_Direct_v0.4.0_Zotero10.xpi \
+              dist/SHA256SUMS \
+              --target "$GITHUB_SHA" --latest \
+              --title 'Zotero ChatGPT Bridge v0.4.0 (Windows + macOS)' \
+              --notes-file /tmp/zotero-0.4.0-notes.md
+          fi
+          for tag in v0.3.0 v0.3.9 v0.4.0; do
+            gh release view "$tag" >/dev/null
+            test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.assets | length')" -ge 1
+          done
+      - name: Remove superseded beta releases only after all three are secure
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' | while IFS= read -r tag; do
+            case "$tag" in
+              v0.3.0|v0.3.9|v0.4.0) echo "Keeping $tag";;
+              *) echo "Removing obsolete release $tag"; gh release delete "$tag" --yes;;
+            esac
+          done
+          count="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq 'length')"
+          test "$count" -eq 3
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' | sort
+          gh release view 'v0.4.0' --json url,tagName,name,assets
