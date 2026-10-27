@@ -397,7 +397,7 @@ var ZCGBridge = {
         !src.includes("function Place-Prompt(")) {
       throw new Error("Windows automation script missing or incomplete in the installed package");
     }
-    const marker=src.match(/WIN_SCRIPT_BUILD\\s+(v\\d+\\.\\d+\\.\\d+beta\\d+)\\s+(uia-\\d{8})/);
+    const marker=src.match(/WIN_SCRIPT_BUILD\s+(v\d+\.\d+\.\d+beta\d+)\s+(uia-\d{8})/);
     if (!marker) throw new Error("Windows helper build marker missing from installed package");
     return marker[1]+" "+marker[2];
   },
