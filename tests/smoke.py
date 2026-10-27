@@ -4,7 +4,7 @@ import json, re, tempfile, os
 ROOT=Path(__file__).resolve().parents[1]
 src=ROOT/'src'
 manifest=json.loads((src/'manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='0.4.0-beta.16'
+assert manifest['version']=='0.4.0-beta.17'
 win=(src/'windows_upload.ps1').read_text(encoding='utf-8')
 assert 'NO_AUTO_SEND' in win
 assert 'Select-ExactFile' in win
@@ -91,8 +91,11 @@ assert 'ControlType]::Document' in win
 assert 'PROMPT_PASTE_VERIFIED' in win
 assert win.index('for ($i=0; $i -lt $paths.Count; $i++)') < win.index('Place-Prompt $foreground.Element $prompt')
 assert 'SetForegroundWindow' in win
-assert 'WIN_SCRIPT_BUILD v0.4.0beta16 uia-20261027' in win
+assert 'WIN_SCRIPT_BUILD v0.4.0beta17 uia-20261027' in win
 assert 'prepareWindows(item)' in (src/'bridge.js').read_text(encoding='utf-8')
+assert '"Not recorded"' in (src/'bridge.js').read_text(encoding='utf-8')
+assert '"None"' in (src/'bridge.js').read_text(encoding='utf-8')
+assert 'legacyDefaultTemplate:' in (src/'bridge.js').read_text(encoding='utf-8')
 assert manifest['applications']['zotero']['id']=='zotero-chatgpt-safari@local.bridge'
 assert manifest['applications']['zotero']['strict_max_version']=='10.0.*'
 a=(src/'Safari_自动上传.applescript').read_text(encoding='utf-8')
