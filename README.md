@@ -74,3 +74,7 @@ If ChatGPT opens but no attachment chooser appears, inspect the task's `status.l
 ### Windows beta.14 multi-attachment upload
 
 Sequentially attaches the main PDF, followed by supported SI PDFs and Word files (DOCX/DOC) from the same Zotero item. Each file uses a separate one-file staging directory. On every subsequent file, the script rechecks the foreground ChatGPT window and reacquires the plus button, allowing it to become enabled after asynchronous uploads. Prompt insertion occurs after the file pickers. It never clicks Send. The file picker closing does not prove ingestion; confirm each attachment chip before submission. The native Windows CI fixture covers a main PDF, SI PDF, SI DOCX, and an excluded `.zotero-reader-state`.
+
+### Unified Windows/macOS beta.17 default research-note prompt
+
+The built-in prompt now requests a detailed, fully English Markdown Zotero reading note with strict provenance labels, evidence appraisal, numerical results, SI navigation, cautious figure handling and deliberately unanswered personal reflections. One shared template serves Windows Edge/Chrome and macOS Safari. Saved genuinely customised prompts remain unchanged; the exact previously saved Chinese built-in default is recognised and upgraded. In the Zotero prompt editor, use **Restore default** if you want to discard a customised prompt and load the new one. No automatic Send.
