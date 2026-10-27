@@ -1,3 +1,5 @@
+> **最新发布版：v0.4.0（Windows Edge/Chrome + macOS Safari）。** [下载 XPI](https://github.com/chengrain0424/zotero-chatgpt-bridge/releases/tag/v0.4.0)。GitHub Releases 仅保留 **v0.3.0、v0.3.9、v0.4.0**；早期 beta 已统一归档到正式版。当前 XPI 内含多附件上传及完整英文科研笔记 Prompt（35,986 字符）。无需从旧测试版中选择安装包。
+
 # Zotero → ChatGPT 普通 Chat（非官方插件）
 
 [English README](README.md) · [开发路线](docs/ROADMAP.md) · [更新记录](CHANGELOG.md)
