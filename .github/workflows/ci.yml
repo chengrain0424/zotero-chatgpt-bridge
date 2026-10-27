@@ -4,7 +4,8 @@ name: CI
 # This prevents duplicate runs/emails for each change.
 on:
   push:
-    branches: [main]
+    # Development branch: build a disposable CI artifact, not a GitHub Release.
+    branches: [main, feature/windows-edge-chrome]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -47,7 +48,7 @@ jobs:
           python3 -m json.tool dist/updates.json > /dev/null
 
       - name: Upload CI XPI artifact for review (not a Release)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/windows-edge-chrome'
         uses: actions/upload-artifact@v4
         with:
           name: Zotero-CI-XPI
