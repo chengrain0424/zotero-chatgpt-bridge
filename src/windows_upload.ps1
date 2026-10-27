@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta12 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta13 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -29,6 +29,8 @@ public static class ZcgWin32 {
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint command);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CreateHardLink(string newFileName, string existingFileName, IntPtr securityAttributes);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hWnd);
@@ -66,6 +68,63 @@ public static class ZcgWin32 {
 function Log([string]$Message) {
     $line = ('[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message) + [Environment]::NewLine
     [System.IO.File]::AppendAllText($StatusPath, $line, [System.Text.Encoding]::UTF8)
+}
+
+function Prepare-UploadStaging([string[]]$SourcePaths, [string]$LogPath) {
+    # Each picker sees ONE vetted attachment, never Zotero reader state files.
+    # Staging is task-local; prefer a hard link (no duplicate PDF data).
+    $taskRoot=[System.IO.Path]::GetDirectoryName($LogPath)
+    $stageRoot=[System.IO.Path]::Combine($taskRoot,'picker_staging')
+    [System.IO.Directory]::CreateDirectory($stageRoot) | Out-Null
+    $allowed=@('.pdf','.doc','.docx','.xls','.xlsx','.csv','.txt','.ppt','.pptx','.md')
+    for($i=0; $i -lt $SourcePaths.Count; $i++) {
+        $src=$SourcePaths[$i]
+        if(-not [System.IO.File]::Exists($src)) { throw 'Zotero 附件路径不存在；未打开 ChatGPT。' }
+        $filename=[System.IO.Path]::GetFileName($src)
+        $ext=[System.IO.Path]::GetExtension($filename).ToLowerInvariant()
+        if($filename.StartsWith('.') -or $allowed -notcontains $ext) {
+            throw '附件扩展名不是受支持的文档类型，已阻止非论文文件上传。'
+        }
+        if($i -eq 0 -and $ext -ne '.pdf') {
+            throw '第一份正文附件不是 PDF，已停止上传。'
+        }
+        $size=([System.IO.FileInfo]::new($src)).Length
+        if($size -lt 1 -or $size -gt 104857600) {
+            throw '附件大小无效或超过 100 MB，已停止上传。'
+        }
+        if($ext -eq '.pdf') {
+            $stream=[System.IO.File]::OpenRead($src)
+            try {
+                $bytes=New-Object byte[] 5
+                if($stream.Read($bytes,0,5) -ne 5 -or
+                    [System.Text.Encoding]::ASCII.GetString($bytes) -cne '%PDF-') {
+                    throw '待上传文件不具有 PDF 文件头；已停止上传。'
+                }
+            } finally { $stream.Dispose() }
+        }
+        $single=[System.IO.Path]::Combine($stageRoot,('{0:D2}' -f ($i+1)))
+        [System.IO.Directory]::CreateDirectory($single) | Out-Null
+        $target=[System.IO.Path]::Combine($single,$filename)
+        if([System.IO.File]::Exists($target)) {
+            throw '附件暂存目录已存在相同文件；为避免误上传已停止。'
+        }
+        $mode='hardlink'
+        if(-not [ZcgWin32]::CreateHardLink($target,$src,[IntPtr]::Zero)) {
+            $mode='copy'
+            [System.IO.File]::Copy($src,$target,$false)
+        }
+        if(-not [System.IO.File]::Exists($target) -or
+           ([System.IO.FileInfo]::new($target)).Length -ne $size) {
+            throw '暂存附件大小验证失败；停止上传。'
+        }
+        $entries=@([System.IO.Directory]::GetFileSystemEntries($single))
+        if($entries.Count -ne 1 -or $entries[0] -ne $target) {
+            throw '文件选择目录不止一份附件；拒绝自动上传。'
+        }
+        Log ('STAGED_SINGLE_FILE index=' + ($i+1) + ' extension=' + $ext +
+             ' bytes=' + $size + ' method=' + $mode)
+        Write-Output $target
+    }
 }
 
 function Resolve-Browser {
@@ -657,21 +716,23 @@ function Select-ExactFile([System.Windows.Automation.AutomationElement]$Dialog, 
         throw '无法通过原生文件名框读取并验证目标 PDF 文件名；未点击“打开”。'
     }
 
-    # Revalidate actual file selection context immediately before opening.
-    # Don't send Enter here; the verified Open button is safer.
-    if($null -eq (Get-FileDialog)) {
-        throw '文件选择器在确认 PDF 名称后已失去焦点。'
+    # The common dialog's UIA Open.InvokePattern may submit its highlighted
+    # item instead of the verified typed name. Use Enter in Edit#1148, which
+    # was just verified by WM_GETTEXT, within the unique staging directory.
+    $focus=Get-NativeFileNameFocus $Dialog
+    if($null -eq $focus -or -not $focus.Verified) {
+        throw '提交前文件名输入框失去焦点；已停止上传。'
     }
-    $ok=$Dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
-        [System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::AutomationIdProperty,'1'))
-    if($null -eq $ok) {
-        $ok=Find-UIA $Dialog @([System.Windows.Automation.ControlType]::Button) '^(Open|打开)(\s|$)'
+    $actual=Read-NativeEditText $focus.FocusHandle
+    if(-not [string]::Equals($actual,$filename,[System.StringComparison]::Ordinal)) {
+        throw '提交前文件名内容改变；已停止上传。'
     }
-    if($null -eq $ok -or -not (Invoke-UIA $ok)) {
-        throw '路径已验证，但无法点击文件选择器的“打开”按钮。'
+    $entries=@([System.IO.Directory]::GetFileSystemEntries($directory))
+    if($entries.Count -ne 1 -or $entries[0] -ne $FullPath) {
+        throw '待选择的临时目录包含不止目标文件，停止上传。'
     }
-    Log 'FILENAME_OPEN_CLICKED'
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    Log 'FILENAME_ENTER_SUBMITTED'
     Start-Sleep -Milliseconds 900
     if($null -ne (Get-FileDialog)) {
         throw '文件选择器仍未关闭，请检查文件选择或权限。'
@@ -738,15 +799,20 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window, [str
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta12 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta13 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
     foreach ($p in $paths) {
         if ($p -match '[\r\n]' -or -not [System.IO.Path]::IsPathRooted($p) -or
             -not [System.IO.File]::Exists($p)) {
-            throw "附件路径无效或已经删除：$p"
+            throw '待上传附件路径无效或已经删除。'
         }
+    }
+    # Never let a chooser select unrelated Zotero metadata in a shared folder.
+    $paths = @(Prepare-UploadStaging $paths $StatusPath)
+    if($paths.Count -lt 1 -or $paths.Count -gt 10) {
+        throw '暂存文件数量与要求不一致；已停止上传。'
     }
     $prompt = [System.IO.File]::ReadAllText($PromptPath, [System.Text.Encoding]::UTF8)
     $script:PromptValue=$prompt
