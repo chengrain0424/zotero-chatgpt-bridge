@@ -5,6 +5,7 @@
 - Discourage sprawling multi-page tables and preserve the three-column figure index; PDF pagination belongs to the external Markdown/PDF renderer, which this Zotero upload bridge cannot control.
 - Preserve the rigorous main/SI contradiction audit, preliminary material/energy balances, Obsidian MathJax $/$$ instructions and deliberately blank personal reflections.
 - Preserve beta.20's corrected Windows PowerShell helper detection and multi-PDF/Word uploads; no automatic Send. Upgrade unchanged saved beta.20 built-in prompts while preserving actual user customisations. Prompt editor limit remains 120,000 characters.
+- The GitHub publishing job inspects the completed XPI for the full prompt, supported Windows helper, build signature and regression tests before publishing.
 
 ## v0.4.0-beta.20 — Fix false “Windows automation script missing” alert
 
