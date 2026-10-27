@@ -12,8 +12,9 @@
 - Correct Windows stable build-marker matching and retain the PDF/Word SI multi-upload and prompt-paste regression tests.
 - Retain only three GitHub Releases: historical original **v0.3.0** and **v0.3.9** XPI binaries, and current **v0.4.0**; remove superseded beta release entries without deleting historical Git tags.
 - Prompt editor limit remains 120,000 characters and existing customised templates are preserved.
+- Older beta Release entries are deleted only after the current stable XPI and both authentic historical XPI downloads have been verified.
 - Release publication is checked separately before the historical Release cleanup, so no binary is deleted until the replacement is available.
-- The historical release consolidation job restores exact original XPI binaries and pins 0.3.0/0.3.9 tags to their genuine historical commits before removing old beta Release entries.
+- To preserve original source provenance under the available workflow permissions, the two historical Releases retain their original Git tags (`v0.3.0-beta` and `v0.3.9-beta`), but use clean displayed titles (`v0.3.0`, `v0.3.9`). The current stable Release is `v0.4.0`.
 
 ## v0.4.0-beta.21 — Refined research-note layout and verification-status default (Windows + macOS)
 
