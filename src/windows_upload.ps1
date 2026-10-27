@@ -1,5 +1,5 @@
 ﻿# Windows ChatGPT upload assistant for Zotero 10
-# WIN_SCRIPT_BUILD v0.4.0beta17 uia-20261027
+# WIN_SCRIPT_BUILD v0.4.0beta18 uia-20261027
 # Experimental: Windows PowerShell 5.1 + Edge/Chrome + native Windows file dialog.
 # Never clicks Send or calls the OpenAI API.
 param(
@@ -980,10 +980,13 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window,
         [System.Windows.Forms.SendKeys]::SendWait('^v')
         Start-Sleep -Milliseconds 650
         $readback=Read-EditorText $editor
-        if($null -ne $readback -and $readback.Contains($prefix)) {
-            Log 'PROMPT_PASTE_VERIFIED (first 30 chars)'
+        if($null -ne $readback -and $readback.Contains($Prompt)) {
+            Log ('PROMPT_PASTE_VERIFIED_FULL expected_length=' + $Prompt.Length)
         } else {
-            Log 'PROMPT_PASTE_UNVERIFIED check composer; Ctrl+V manually'
+            $observed=if($null -eq $readback) { -1 } else { $readback.Length }
+            Log ('PROMPT_PASTE_UNVERIFIED_FULL expected_length=' + $Prompt.Length +
+                 ' observed_length=' + $observed +
+                 ' check composer; Ctrl+V manually if incomplete')
         }
     } catch {
         Log ('PROMPT_CLIPBOARD_READY paste skipped: ' + $_.Exception.GetType().Name)
@@ -991,7 +994,7 @@ function Place-Prompt([System.Windows.Automation.AutomationElement]$Window,
 }
 
 try {
-    Log 'WIN_SCRIPT_BUILD v0.4.0beta17 uia-20261027'
+    Log 'WIN_SCRIPT_BUILD v0.4.0beta18 uia-20261027'
     $paths = @([System.IO.File]::ReadAllLines($UploadListPath, [System.Text.Encoding]::UTF8) |
         Where-Object { $_.Length -gt 0 })
     if ($paths.Count -lt 1 -or $paths.Count -gt 10) { throw '附件清单必须包含 1–10 个文件。' }
