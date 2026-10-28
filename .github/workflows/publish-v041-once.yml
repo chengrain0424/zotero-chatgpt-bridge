@@ -96,3 +96,47 @@ jobs:
             --notes-file /tmp/v041-release-notes.md
           gh release view v0.4.1 --json url,tagName,name,assets
           test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.4.1" --jq '[.assets[]|select(.name=="Zotero_to_ChatGPT_Direct_v0.4.1_Zotero10.xpi")]|length')" -eq 1
+
+  prune-previous:
+    if: contains(github.event.head_commit.message, '[prune-040]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Verify v0.4.1 Release and feed before removing old Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "v0.4.1"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.4.1" > /tmp/new_release.json
+          python3 - <<'PY'
+          import json
+          j=json.load(open('/tmp/new_release.json'))
+          assert any(a['name']=='Zotero_to_ChatGPT_Direct_v0.4.1_Zotero10.xpi' and
+            a['digest']=='sha256:94b46f8feac9654aebe8fff00a674efeacb4056458ff1298c901ef802fa9ac02'
+            for a in j['assets'])
+          PY
+          gh api "repos/$GITHUB_REPOSITORY/contents/updates.json?ref=main" --jq .content | base64 -d > /tmp/updates.json
+          python3 - <<'PY'
+          import json
+          j=json.load(open('/tmp/updates.json'))
+          u=j['addons']['zotero-chatgpt-safari@local.bridge']['updates'][0]
+          assert u['version']=='0.4.1'
+          assert u['update_hash']=='sha256:94b46f8feac9654aebe8fff00a674efeacb4056458ff1298c901ef802fa9ac02'
+          PY
+          gh release view v0.3.0-beta >/dev/null
+          gh release view v0.3.9-beta >/dev/null
+      - name: Retain two historic Releases and only latest v0.4.1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release delete v0.4.0 --yes
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' | sort)"
+          expected="$(printf 'v0.3.0-beta\nv0.3.9-beta\nv0.4.1')"
+          echo "$actual"
+          test "$actual" = "$expected"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = v0.4.1
+          echo 'PASS only two historical releases + v0.4.1; old v0.4.0 git tag retained'
