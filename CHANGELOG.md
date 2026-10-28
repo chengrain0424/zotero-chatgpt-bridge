@@ -1,3 +1,11 @@
+## v0.4.1 — Stable release: ChatGPT ZIP/MD to Zotero child notes
+
+- Promote the tested v0.4.1 import workflow to the current official release. Select a parent paper and drop ZIP/MD onto its detail panel or use the right-click importer.
+- Requires Better Notes for Markdown and image import; creates a real Zotero child note. Does not overwrite existing notes.
+- ZIP backup defaults off, with optional per-user opt-in; panel shows linked-note counts, recent import shortcut, and only appears on primary paper records.
+- Fix native Windows file picker BrowsingContext conversion; retain secure ZIP validation, original PDF/SI uploading, 35,986-char reading prompt and no-auto-send.
+- For imported image and formula fidelity, inspect the result in Zotero; source ZIP may be kept outside Zotero as archival backup.
+
 ### v0.4.1 development UX refinement — import panel and optional ZIP
 
 - Change ZIP backup default to **OFF**. Users may opt in via the checkbox on the primary reference item pane; existing ZIP attachments are never deleted automatically.
