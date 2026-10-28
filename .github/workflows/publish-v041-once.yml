@@ -104,6 +104,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - name: Verify v0.4.1 Release and feed before removing old Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
