@@ -1,0 +1,98 @@
+name: Publish v0.4.1 (one-time verified)
+
+on:
+  push:
+    branches:
+      - feature/windows-edge-chrome
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: contains(github.event.head_commit.message, '[publish-041]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: publish-v0.4.1
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify validated note importer and build
+        run: |
+          set -euo pipefail
+          node --check src/bootstrap.js
+          node --check src/bridge.js
+          node --check src/note_import.js
+          node --test tests/attachments.test.js
+          node --test tests/note_import.test.js
+          python3 tests/smoke.py
+          python3 scripts/build_release.py --owner chengrain0424 --repo zotero-chatgpt-bridge
+          (cd dist && sha256sum -c SHA256SUMS)
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, re, zipfile
+          package=Path('dist/Zotero_to_ChatGPT_Direct_v0.4.1_Zotero10.xpi')
+          assert package.is_file()
+          with zipfile.ZipFile(package) as z:
+              assert z.testzip() is None
+              assert json.loads(z.read('manifest.json'))['version']=='0.4.1'
+              names=set(z.namelist())
+              assert {'manifest.json','bootstrap.js','bridge.js','note_import.js','windows_source.js','safari_source.js','prefs.xhtml','icon.svg'} <= names
+              src=z.read('note_import.js').decode('utf-8')
+              bridge=z.read('bridge.js').decode('utf-8')
+              default=json.loads(re.search(r'defaultTemplate: ("(?:\\.|[^"\\])*")',bridge).group(1))
+              assert len(default)==35986
+              for marker in ('const browsingContext=','onItemChange:({item,setEnabled})',
+                             'setEnabled(!!item?.isRegularItem?.())',
+                             'getKeepZIP()', 'getImportedNotes(parent)',
+                             'fromMD(extracted.mdPath,{noteId:note.id,ignoreVersion:true})'):
+                  assert marker in src,marker
+              win=z.read('windows_source.js').decode('utf-8')
+              assert win.startswith('var WINDOWS_SOURCE = ')
+              ps=json.loads(win.split('var WINDOWS_SOURCE = ',1)[1].rsplit(';',1)[0].strip())
+              assert 'function Select-ExactFile(' in ps
+              assert 'function Place-Prompt(' in ps
+              assert 'NO_AUTO_SEND' in ps
+              print('Verified v0.4.1 XPI, ZIP note importer, default prompt, Windows helper')
+          PY
+      - name: Publish v0.4.1 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.4.1 >/dev/null 2>&1; then
+            echo "v0.4.1 already exists: refusing to overwrite"
+            exit 1
+          fi
+          cat > /tmp/v041-release-notes.md <<'NOTES'
+          # Zotero ChatGPT Bridge v0.4.1
+
+          Adds a Zotero → ChatGPT → Zotero reading-note import workflow for Windows and macOS, retaining the v0.4.0 PDF/SI upload functions and 35,986-character academic research-note prompt.
+
+          **Import a research-note ZIP or Markdown**
+          - Select a **parent literature item** and right-click **导入 ChatGPT ZIP / Markdown 阅读笔记**, or drag a single ZIP/MD onto the dedicated area in the item's details pane.
+          - Import Markdown with figures using **Better Notes** (must be installed and enabled). New notes are linked as Zotero child notes; existing notes are not overwritten.
+          - The import panel is shown on primary literature records only, not PDF, SI, or note children.
+          - The panel shows total child notes and the number imported by ChatGPT Bridge, with an open-last-import action. **Newly imported** notes receive a `ChatGPT Bridge Import` tag. Older imported notes are not retroactively tagged.
+          - Original ZIP attachments are **not kept by default**; enable the panel checkbox to retain a backup. Any existing ZIP attachments are left untouched.
+          - Fixes native Zotero Windows file picking by passing a BrowsingContext, instead of a Window, to nsIFilePicker.init.
+          - ZIP path traversal and archive-size checks; Markdown image reference validation.
+
+          **Preserved:** PDF/SI uploads to ChatGPT in Edge/Chrome/Safari, no auto-send, custom prompt support up to 120,000 characters, and evidence-focused note generation.
+
+          **Compatibility:** Zotero 10.x and a compatible Better Notes extension for import. The import pane uses Zotero 10 APIs. Static and Windows PowerShell tests pass, and ZIP drag import was exercised on Zotero. Please verify equations and embedded images after import and keep an external ZIP backup if full-fidelity archival matters.
+
+          The Releases page will retain the two historical versions v0.3.0 and v0.3.9 plus this latest stable release.
+          NOTES
+          gh release create v0.4.1 \
+            dist/Zotero_to_ChatGPT_Direct_v0.4.1_Zotero10.xpi \
+            dist/SHA256SUMS \
+            --target "$GITHUB_SHA" --latest \
+            --title 'Zotero ChatGPT Bridge v0.4.1 (Windows + macOS)' \
+            --notes-file /tmp/v041-release-notes.md
+          gh release view v0.4.1 --json url,tagName,name,assets
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.4.1" --jq '[.assets[]|select(.name=="Zotero_to_ChatGPT_Direct_v0.4.1_Zotero10.xpi")]|length')" -eq 1
