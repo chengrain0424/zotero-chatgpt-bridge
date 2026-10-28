@@ -3,9 +3,9 @@
     "zotero-chatgpt-safari@local.bridge": {
       "updates": [
         {
-          "version": "0.4.0",
-          "update_link": "https://github.com/chengrain0424/zotero-chatgpt-bridge/releases/download/v0.4.0/Zotero_to_ChatGPT_Direct_v0.4.0_Zotero10.xpi",
-          "update_hash": "sha256:f21f6b3fe109db47591eec3837a19feae6b7e16df586294048f43c32410a2202",
+          "version": "0.4.1",
+          "update_link": "https://github.com/chengrain0424/zotero-chatgpt-bridge/releases/download/v0.4.1/Zotero_to_ChatGPT_Direct_v0.4.1_Zotero10.xpi",
+          "update_hash": "sha256:94b46f8feac9654aebe8fff00a674efeacb4056458ff1298c901ef802fa9ac02",
           "applications": {
             "zotero": {
               "strict_min_version": "10.0",
