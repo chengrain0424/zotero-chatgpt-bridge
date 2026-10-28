@@ -147,4 +147,6 @@ beta.15 实际日志显示：两份附件均完成原生文件选择（约 7.7MB
 
 为减少误操作：每次只导入一个 ZIP；ZIP 不能含路径穿越或异常条目；单个 ZIP 不能超过 80 MB，解压总量最多 120 MB，单个 MD 最多 8 MB，图片单张最多 24 MB；如果 ZIP 内存在多个不能唯一识别的 Markdown 文件，则要求先整理。重复导入创建新子笔记而不覆盖旧笔记。解压工作区暂留系统临时目录；请用 Zotero 的笔记实际检查配图和公式，并保留原始 ZIP 备份。直接向 Zotero **文献列表**拖文件仍是 Zotero 原生行为，插件只接管右侧的专用拖放区域。
 
-这是 v0.4.1 功能分支开发构建，尚需 Zotero 10 + Better Notes 实机验证；不是已发布的正式 v0.4.1 Release。正式 v0.4.0 安装包不变。
+**v0.4.1 已作为正式 GitHub Release 发布。** 在 Zotero 10 中安装并启用 Better Notes 后，使用主文献详情的拖放区域或右键菜单导入 ZIP/MD。ZIP 备份默认关闭，旧笔记不被覆盖；导入完成后建议核对原图、数学公式及表格。
+
+**最新版下载：** https://github.com/chengrain0424/zotero-chatgpt-bridge/releases/tag/v0.4.1
