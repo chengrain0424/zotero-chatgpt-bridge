@@ -65,12 +65,84 @@ var ZCGBridge = {
       try { this.renderToolbar(event); } catch(e) { Zotero.logError(e); }
     };
     Zotero.Reader.registerEventListener("renderToolbar", this.toolbarHandler, this.addonID);
+    // The renderToolbar event does not replay for an already-mounted PDF tab.
+    // Zotero 10 restores previously-opened PDFs before/during plugin startup.
+    // Repair those toolbars without reopening papers or disturbing page state.
+    void this.restoreExistingReaderToolbars();
+  },
+  readerToolbarContainer(reader) {
+    // Zotero 10 reader's React Toolbar renders <CustomSections type="Toolbar"/>
+    // inside .toolbar > .end. Guard this internal DOM dependency: if a future
+    // Zotero changes it, the normal official renderToolbar hook still works.
+    let doc=reader?._iframeWindow?.document;
+    if(!doc || !doc.defaultView || doc.defaultView.closed) return null;
+    let container=doc.querySelector?.(".toolbar .end .custom-sections");
+    return container ? {doc,container} : null;
+  },
+  ensureExistingReaderToolbar(reader) {
+    if(!this.toolbarHandler) return false;
+    const slot=this.readerToolbarContainer(reader);
+    if(!slot) return false;
+    const {doc,container}=slot;
+    if(container.querySelector?.('[data-zcg-toolbar="true"]')) return true;
+    // React's CustomSections wraps each appended widget in .section.
+    // Reuse the exact button-rendering method rather than duplicating UI logic.
+    this.renderToolbar({reader,doc,append:root=>{
+      const section=doc.createElement("div");
+      section.className="section";
+      section.setAttribute("data-zcg-restored","true");
+      section.appendChild(root);
+      container.appendChild(section);
+    }});
+    return !!container.querySelector?.('[data-zcg-toolbar="true"]');
+  },
+  async restoreExistingReaderToolbars() {
+    if(this.readerRecoveryRunning) return;
+    this.readerRecoveryRunning=true;
+    try {
+      // Bounded retries cover asynchronous session restoration. Never hold the
+      // Zotero startup promise open; stop immediately on plugin shutdown.
+      for(let attempt=0;attempt<16 && this.toolbarHandler;attempt++) {
+        const readers=Zotero.Reader?._readers;
+        if(Array.isArray(readers)) {
+          for(const reader of readers) {
+            try {this.ensureExistingReaderToolbar(reader);}
+            catch(e){Zotero.logError(e);}
+          }
+        }
+        if(attempt<15 && this.toolbarHandler) {
+          if(typeof Zotero.Promise?.delay!=="function") break;
+          await Zotero.Promise.delay(400);
+        }
+      }
+    } catch(e) {Zotero.logError(e);}
+    finally {this.readerRecoveryRunning=false;}
+  },
+  removeExistingReaderToolbars() {
+    // The official listener is removed separately; remove the DOM fallback
+    // during disable/reinstall so no stale buttons or duplicate handlers remain.
+    const readers=Zotero.Reader?._readers;
+    if(!Array.isArray(readers)) return;
+    for(const reader of readers) {
+      try {
+        const doc=reader?._iframeWindow?.document;
+        if(!doc) continue;
+        for(const root of doc.querySelectorAll?.('[data-zcg-toolbar="true"]')||[]) {
+          const section=root.closest?.('[data-zcg-restored="true"]');
+          if(section) section.remove();
+          else root.remove();
+        }
+      }catch(e){Zotero.logError(e);}
+    }
   },
   unregisterReaderToolbar() {
-    if (!this.toolbarHandler) return;
-    try { Zotero.Reader.unregisterEventListener("renderToolbar",this.toolbarHandler); }
-    catch(e) { Zotero.logError(e); }
-    this.toolbarHandler=null;
+    const handler=this.toolbarHandler;
+    this.toolbarHandler=null; // also stops any pending session-recovery loop
+    if (handler) {
+      try { Zotero.Reader.unregisterEventListener("renderToolbar",handler); }
+      catch(e) { Zotero.logError(e); }
+    }
+    this.removeExistingReaderToolbars();
   },
   reportError(err) {
     try { Zotero.logError(err); } catch (_) {}
@@ -78,8 +150,11 @@ var ZCGBridge = {
   },
   renderToolbar({reader,doc,append}) {
     if (!reader || !doc || typeof append !== "function") return;
+    // A toolbar can be restored manually and later re-rendered by React.
+    if(doc.querySelector?.('[data-zcg-toolbar="true"]')) return;
     // Each toolbar render belongs to ONE reader. Never fall back to stale selection.
     const root=doc.createElement("div");
+    root.setAttribute("data-zcg-toolbar","true");
     root.style.cssText="display:inline-flex;align-items:center;gap:4px;margin:0 6px;flex-shrink:0;";
     const analyze=doc.createElement("button");
     analyze.type="button";
