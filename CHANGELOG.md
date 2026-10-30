@@ -1,3 +1,11 @@
+## v0.4.2 development — restore ChatGPT toolbar in reopened PDF tabs
+
+- Fix Zotero 10.0.7 startup ordering: previously reopened PDF readers could miss the one-time renderToolbar event before this plugin registered its listener.
+- On plugin startup, scan existing reader sessions for an already-rendered toolbar and insert the **same** ChatGPT/Prompt controls in Zotero's toolbar CustomSections slot, without closing or reloading any PDF.
+- Idempotently suppress duplicate widgets; remove recovery-inserted and event-inserted UI at disable/shutdown, and bound the asynchronous restoration retries to roughly six seconds.
+- Preserve official `renderToolbar` listener for newly opened/React-rerendered readers; if Zotero changes an internal selector, event handling remains available.
+- This is a test build only; leave latest official GitHub Release v0.4.1 unchanged pending user validation on Zotero 10.0.7.
+
 ## v0.4.1 — Stable release: ChatGPT ZIP/MD to Zotero child notes
 
 - Promote the tested v0.4.1 import workflow to the current official release. Select a parent paper and drop ZIP/MD onto its detail panel or use the right-click importer.
