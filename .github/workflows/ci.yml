@@ -39,20 +39,21 @@ jobs:
           node --check src/note_import.js
           node --test tests/attachments.test.js
           node --test tests/note_import.test.js
+          node --test tests/reader_recovery.test.js
       - name: Static smoke test
         run: python3 tests/smoke.py
       - name: Test build package
         run: |
           python3 scripts/build_release.py --owner dummy-owner --repo dummy-repo
-          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.1*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert {'windows_source.js','note_import.js'} <= set(z.namelist())"
+          python3 -c "from pathlib import Path; import zipfile; packages=list(Path('dist').glob('*v0.4.2*.xpi')); assert len(packages)==1; z=zipfile.ZipFile(packages[0]); assert z.testzip() is None; assert {'windows_source.js','note_import.js'} <= set(z.namelist())"
           python3 -m json.tool dist/updates.json > /dev/null
 
       - name: Upload CI XPI artifact for review (not a Release)
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/windows-edge-chrome'
         uses: actions/upload-artifact@v4
         with:
-          name: Zotero-v0.4.1-development-XPI
-          path: dist/Zotero_to_ChatGPT_Direct_v0.4.1_Zotero10.xpi
+          name: Zotero-v0.4.2-development-XPI
+          path: dist/Zotero_to_ChatGPT_Direct_v0.4.2_Zotero10.xpi
           if-no-files-found: error
           retention-days: 7
 
