@@ -4,7 +4,7 @@ import json, re, tempfile, os
 ROOT=Path(__file__).resolve().parents[1]
 src=ROOT/'src'
 manifest=json.loads((src/'manifest.json').read_text(encoding='utf-8'))
-assert manifest['version']=='0.4.1'
+assert manifest['version']=='0.4.2'
 win=(src/'windows_upload.ps1').read_text(encoding='utf-8')
 assert 'NO_AUTO_SEND' in win
 assert 'Select-ExactFile' in win
@@ -188,3 +188,10 @@ assert 'setEnabled(!!item?.isRegularItem?.())' in importer
 assert 'ChatGPT Bridge Import' in importer
 assert '打开最近导入的笔记' in importer
 assert '已有子笔记 ' in importer
+
+# Reader session restoration and plugin re-enable lifecycle regression.
+assert 'restoreExistingReaderToolbars()' in bridge_text
+assert 'ensureExistingReaderToolbar(reader)' in bridge_text
+assert 'removeExistingReaderToolbars()' in bridge_text
+assert 'data-zcg-toolbar' in bridge_text
+assert 'data-zcg-restored' in bridge_text
