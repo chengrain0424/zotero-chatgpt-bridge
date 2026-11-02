@@ -188,6 +188,17 @@ var ZCGNoteImporter = {
     if(missing.length) throw new Error("Markdown 引用了不存在或不安全的图片："+missing.slice(0,4).join(", "));
     return {source,imageRefs};
   },
+  auditImportedImages(html, markdownImageCount=0) {
+    // Better Notes embeds local images as <img data-attachment-key="...">.
+    // If an image retains an src without that key, its origin may still be
+    // an external URL or a disposable temporary file and can keep reloading.
+    // Audit only; do not silently delete a successfully imported note.
+    const elements=String(html||"").match(/<img\b[^>]*>/gi)||[];
+    const embedded=elements.filter(x=>/\bdata-attachment-key\s*=\s*["'][^"']+["']/i.test(x)).length;
+    const unresolved=elements.length-embedded;
+    const missing=Math.max(0,markdownImageCount-elements.length);
+    return {total:elements.length,embedded,unresolved,missing};
+  },
   async pickFile(win) {
     const picker=Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
     // Firefox/Zotero's modern nsIFilePicker.init expects a BrowsingContext,
@@ -239,6 +250,10 @@ var ZCGNoteImporter = {
       // The provenance tag is already saved with the initial note.
       // Do not save the imported note again: Zotero's editor and Better Notes
       // should never be forced to reload large figures for bookkeeping alone.
+      const imageAudit=this.auditImportedImages(saved.getNote(),examined.imageRefs.length);
+      if(imageAudit.unresolved || imageAudit.missing)
+        Zotero.debug("ChatGPT Bridge image audit: embedded="+imageAudit.embedded+
+          " unresolved="+imageAudit.unresolved+" missing="+imageAudit.missing);
       // ZIP backup is optional. Default OFF: an embedded Zotero child note
       // should not automatically create a redundant ZIP attachment.
       let attached=false;
@@ -255,6 +270,10 @@ var ZCGNoteImporter = {
       this.notify(win,"已导入到「"+String(parent.getField("title")||"文献")+"」的子笔记。"+
         (isZip?"\nZIP 内图片 "+extracted.imageCount+" 张；"+
           (this.getKeepZIP()?(attached?"ZIP 已作为附件保留。":"ZIP 备份失败，请保留下载原件。"):"默认不保存 ZIP 附件。"):"")+
+        (imageAudit.unresolved || imageAudit.missing
+           ? "\n⚠ 图片检查："+imageAudit.unresolved+" 张未转换为 Zotero 内嵌图片，"+
+             imageAudit.missing+" 张在导入结果中缺失；请保留原始 ZIP。"
+           : "\n内嵌图片 "+imageAudit.embedded+" 张。")+
         "\n请打开笔记确认图片和公式显示正确。");
       return saved;
     } catch(e) {
