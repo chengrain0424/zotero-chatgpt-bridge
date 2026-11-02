@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero to ChatGPT Chat (macOS Safari / Windows Chromium)",
-  "version": "0.4.2",
-  "description": "Zotero 10 ChatGPT Bridge: restores toolbar buttons in session-restored PDF tabs after restart, preserves Better Notes ZIP/MD import, main PDF/SI upload and no auto-send.",
+  "version": "0.4.3",
+  "description": "Zotero 10 ChatGPT Bridge: verify images imported from Markdown as embedded Zotero note attachments and reduce extra save notifications; includes restored PDF toolbar, ZIP/MD import, and no auto-send.",
   "author": "ChatGPT-assisted community build",
   "applications": {
     "zotero": {
