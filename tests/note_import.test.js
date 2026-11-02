@@ -8,6 +8,7 @@ const parent={id:41,libraryID:1,isRegularItem:()=>true,getField:()=> 'Test paper
   getNotes:()=>[...data.values()].filter(n=>n.parentID===41).map(n=>n.id)};
 const attachment={id:42,parentItemID:41,isAttachment:()=>true,isRegularItem:()=>false};
 let current=50;
+let savedTxCalls=0;
 class Item {
  constructor(type){assert.equal(type,'note');this.id=++current;this.text='';this.tags=[];this.saved=false;}
  isNote(){return true;}
@@ -15,7 +16,7 @@ class Item {
  getTags(){return this.tags.map(tag=>({tag}));}
  setNote(x){this.text=x;}
  getNote(){return this.text;}
- async saveTx(){this.saved=true;data.set(this.id,this);}
+ async saveTx(){savedTxCalls++;this.saved=true;data.set(this.id,this);}
  async eraseTx(){this.erased=true;data.delete(this.id);}
 }
 let backupCalls=0;
@@ -101,6 +102,16 @@ async function rejects(f,re){await assert.rejects(f,re);}
  assert.throws(()=>imp.chooseMarkdown([{parts:['one.md']},{parts:['two.md']}]),/多个 Markdown/);
  const source=await imp.inspectMarkdown('/archive/paper.md');
  assert.equal(source.imageRefs.length,0);
+ // Zotero embeds permanent images by data-attachment-key. External src paths
+ // can expire or continuously reload after the temp extraction folder vanishes.
+ const audit=imp.auditImportedImages('<div><img data-attachment-key="ABC123"><img data-attachment-key="DEF456"></div>',2);
+ assert.equal(audit.embedded,2);
+ assert.equal(audit.unresolved,0);
+ assert.equal(audit.missing,0);
+ const broken=imp.auditImportedImages('<div><img src="file:///temp/image.png"></div>',2);
+ assert.equal(broken.embedded,0);
+ assert.equal(broken.unresolved,1);
+ assert.equal(broken.missing,1);
  assert.throws(()=>imp.fileFromDrop({dataTransfer:{files:[{name:'a.pdf'}]}}),/ZIP|Markdown/);
  assert.equal(imp.fileFromDrop({dataTransfer:{files:[{name:'a.zip',mozFullPath:'/tmp/a.zip'}]}}),'/tmp/a.zip');
  const saved=[];
@@ -131,7 +142,9 @@ async function rejects(f,re){await assert.rejects(f,re);}
  assert.match(status.children[0].textContent,/已有子笔记 0 篇 · ChatGPT 导入 0 篇/);
 
  // Verify plain Markdown path and parent binding / no replace-on-duplicate.
+ const beforeNoteSave=savedTxCalls;
  const n=await imp.runImport(parent,'/archive/paper.md',win);
+ assert.equal(savedTxCalls-beforeNoteSave,2,'only the initial note and Better Notes import should save, not the provenance tag');
  assert.equal(n.parentID,41);
  assert(n.getNote().includes('Research summary'));
  assert(saved.some(x=>x.includes('已导入')));
