@@ -225,16 +225,20 @@ var ZCGNoteImporter = {
       note.libraryID=parent.libraryID;
       note.parentID=parent.id;
       note.setNote("<div><p>AI Research Note — importing…</p></div>");
+      // Attach provenance before the initial save. Better Notes imports images
+      // and saves the finished rich-text note once; another save immediately
+      // afterwards can trigger a costly extra item-notifier/editor refresh
+      // on very long, image-heavy notes.
+      note.addTag(this.importedTag);
       await note.saveTx();
       const result=await bn.fromMD(extracted.mdPath,{noteId:note.id,ignoreVersion:true});
       if(!result?.id || result.id!==note.id) throw new Error("Better Notes 没有确认完成 Markdown 导入。");
       const saved=Zotero.Items.get(note.id);
       if(!saved?.getNote()?.trim() || !saved.getNote().includes("<"))
         throw new Error("导入后子笔记内容为空或无效。");
-      // Apply a lightweight, persistent marker to the child note.
-      // Never rewrite the imported Markdown title or existing Zotero notes.
-      try { saved.addTag(this.importedTag); await saved.saveTx(); }
-      catch(e) { Zotero.logError(e); }
+      // The provenance tag is already saved with the initial note.
+      // Do not save the imported note again: Zotero's editor and Better Notes
+      // should never be forced to reload large figures for bookkeeping alone.
       // ZIP backup is optional. Default OFF: an embedded Zotero child note
       // should not automatically create a redundant ZIP attachment.
       let attached=false;
