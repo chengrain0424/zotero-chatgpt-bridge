@@ -1,3 +1,10 @@
+## v0.4.3 development — import-image integrity and refresh reduction
+
+- Audit imported note HTML after Better Notes `fromMD` to count permanently embedded Zotero images (`data-attachment-key`) and detect leftover source paths or missing Markdown figures. Warn rather than silently claiming a successful full-image import; do not delete the user's imported note.
+- Save the `ChatGPT Bridge Import` tag together with the initial empty note instead of doing a third note save after images are imported. This reduces Zotero item notification/editor refresh pressure during long, image-rich note imports.
+- Existing notes are not rewritten, and the plugin does not run a background image-reimport loop. Continuous image blinking **after** import can also be caused by note editor/Better Notes syncing, other plugins or invalid image resources; isolate using a sample ZIP and Zotero Debug ID.
+- Includes v0.4.2 restored PDF toolbar fix; does not change the published stable v0.4.1 or its auto-update feed.
+
 ## v0.4.2 development — restore ChatGPT toolbar in reopened PDF tabs
 
 - Fix Zotero 10.0.7 startup ordering: previously reopened PDF readers could miss the one-time renderToolbar event before this plugin registered its listener.
